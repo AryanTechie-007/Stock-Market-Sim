@@ -2,13 +2,16 @@ import { MarketMaker } from './market-maker.js';
 import { MomentumTrader } from './momentum.js';
 import { ValueInvestor } from './value-investor.js';
 import { NoiseTrader } from './noise.js';
+import { StatisticalArbitrageTrader } from './arbitrage.js';
+import { IcebergWhaleTrader } from './iceberg.js';
 
 export class NPCManager {
-  constructor(matchingEngine, marketManager, accountManager, clock) {
+  constructor(matchingEngine, marketManager, accountManager, clock, regimeEngine = null) {
     this.matchingEngine = matchingEngine;
     this.marketManager = marketManager;
     this.accountManager = accountManager;
     this.clock = clock;
+    this.regimeEngine = regimeEngine;
     this.traders = [];
 
     this._setupTraders();
@@ -19,6 +22,20 @@ export class NPCManager {
     this.marketManager.on('news', (newsItem) => {
       this.broadcastNews(newsItem);
     });
+
+    if (this.regimeEngine) {
+      this.regimeEngine.on('regimeChange', (regime) => {
+        this.broadcastRegime(regime);
+      });
+    }
+  }
+
+  broadcastRegime(regime) {
+    for (const trader of this.traders) {
+      if (trader.type === 'MARKET_MAKER' && trader.setRegimeMultiplier) {
+        trader.setRegimeMultiplier(regime.spreadMultiplier);
+      }
+    }
   }
 
   _setupTraders() {
@@ -71,6 +88,23 @@ export class NPCManager {
       new NoiseTrader('bot_noise_2', 'Retail Swarm Beta', this.matchingEngine, this.marketManager, this.accountManager, this.clock, {
         minDelayMs: 1400,
         maxDelayMs: 3200
+      })
+    );
+
+    // Advanced Algorithmic NPCs (v0.7)
+    // 1 Statistical Arbitrage Bot
+    this.traders.push(
+      new StatisticalArbitrageTrader('bot_arb_1', 'Citadel StatArb Alpha', this.matchingEngine, this.marketManager, this.accountManager, this.clock, {
+        minDelayMs: 1200,
+        maxDelayMs: 2800
+      })
+    );
+
+    // 1 Iceberg Institutional Whale Bot
+    this.traders.push(
+      new IcebergWhaleTrader('bot_whale_1', 'BlackRock Execution LP', this.matchingEngine, this.marketManager, this.accountManager, this.clock, {
+        minDelayMs: 2000,
+        maxDelayMs: 4000
       })
     );
   }

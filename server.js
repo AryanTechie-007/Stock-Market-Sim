@@ -11,6 +11,7 @@ import { MarketManager } from './engine/market.js';
 import { NPCManager } from './traders/manager.js';
 import { SQLiteStorageManager } from './engine/sqlite-storage.js';
 import { TournamentManager } from './engine/tournament.js';
+import { MarketRegimeEngine } from './engine/regimes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -34,8 +35,17 @@ const accountManager = new AccountManager(100000, storageManager); // 100,000 Cr
 const symbols = ['AUTO', 'SOLR', 'BYTE', 'NBNK', 'MEDL'];
 const matchingEngine = new MatchingEngine(symbols, accountManager, clock);
 const marketManager = new MarketManager(clock, matchingEngine);
-const npcManager = new NPCManager(matchingEngine, marketManager, accountManager, clock);
+const regimeEngine = new MarketRegimeEngine(clock);
+const npcManager = new NPCManager(matchingEngine, marketManager, accountManager, clock, regimeEngine);
 const tournamentManager = new TournamentManager(accountManager, clock, 180, 50000, () => marketManager.getCurrentPrices());
+
+// Wire regime events
+regimeEngine.on('regimeChange', (regime) => {
+  io.emit('regime:change', regime);
+});
+regimeEngine.on('tick', (data) => {
+  io.emit('regime:tick', data);
+});
 
 // Wire tournament events
 matchingEngine.on('trade', (trade) => {
@@ -59,6 +69,7 @@ app.use(express.json());
 app.get('/api/state', (req, res) => {
   res.json({
     clock: clock.getState(),
+    regime: regimeEngine.getRegime(),
     companies: marketManager.getAllCompanies(),
     leaderboard: accountManager.getLeaderboard(marketManager.getCurrentPrices(), 10)
   });
@@ -243,7 +254,8 @@ io.on('connection', (socket) => {
       portfolio: accountManager.getPortfolio(userId, marketManager.getCurrentPrices()),
       openOrders: matchingEngine.getUserOpenOrders(userId),
       leaderboard: accountManager.getLeaderboard(marketManager.getCurrentPrices(), 15),
-      tournament: tournamentManager.getState(marketManager.getCurrentPrices())
+      tournament: tournamentManager.getState(marketManager.getCurrentPrices()),
+      regime: regimeEngine.getRegime()
     });
   });
 
@@ -385,6 +397,6 @@ httpServer.listen(PORT, () => {
   console.log(` 🏛️  MARKET ARENA - FINANCIAL MARKET SIMULATOR`);
   console.log(` 🚀 Server listening on http://localhost:${PORT}`);
   console.log(` 🕒 Market Cycle: Day 1 - Regular Trading Hours Active`);
-  console.log(` 🤖 NPC Traders: 8 automated agents providing liquidity`);
+  console.log(` 🤖 NPC Traders: ${npcManager.traders.length} automated agents providing liquidity`);
   console.log(`=======================================================`);
 });

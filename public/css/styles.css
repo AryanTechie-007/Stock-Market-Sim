@@ -1734,3 +1734,88 @@ tbody tr:hover td {
   padding: 3px 8px;
 }
 
+/* ----------------------------------------------------
+   v0.7: MARKET MICROSTRUCTURE REGIME PILL
+   ---------------------------------------------------- */
+.regime-pill {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 10px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 2px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text-dim);
+  transition: all 0.25s ease;
+  white-space: nowrap;
+}
+
+.regime-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  background: #64748b;
+  transition: all 0.25s ease;
+}
+
+.regime-pill.regime-normal {
+  border-color: #334155;
+  background: rgba(51, 65, 85, 0.15);
+  color: #94a3b8;
+}
+.regime-pill.regime-normal .regime-dot {
+  background: #94a3b8;
+  box-shadow: 0 0 5px rgba(148, 163, 184, 0.4);
+}
+
+.regime-pill.regime-low {
+  border-color: rgba(56, 189, 248, 0.4);
+  background: rgba(56, 189, 248, 0.08);
+  color: #38bdf8;
+}
+.regime-pill.regime-low .regime-dot {
+  background: #38bdf8;
+  box-shadow: 0 0 6px rgba(56, 189, 248, 0.6);
+}
+
+.regime-pill.regime-breakout {
+  border-color: rgba(52, 211, 153, 0.4);
+  background: rgba(52, 211, 153, 0.08);
+  color: #34d399;
+}
+.regime-pill.regime-breakout .regime-dot {
+  background: #34d399;
+  box-shadow: 0 0 6px rgba(52, 211, 153, 0.6);
+}
+
+.regime-pill.regime-high {
+  border-color: rgba(245, 158, 11, 0.4);
+  background: rgba(245, 158, 11, 0.08);
+  color: #f59e0b;
+}
+.regime-pill.regime-high .regime-dot {
+  background: #f59e0b;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.6);
+}
+
+.regime-pill.regime-crash {
+  border-color: rgba(239, 68, 68, 0.7);
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  animation: pulse-crash 1s infinite alternate;
+}
+.regime-pill.regime-crash .regime-dot {
+  background: #ef4444;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.8);
+}
+
+@keyframes pulse-crash {
+  0% { border-color: rgba(239, 68, 68, 0.4); }
+  100% { border-color: rgba(239, 68, 68, 0.9); }
+}
+
+

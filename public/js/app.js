@@ -36,7 +36,8 @@ const state = {
     macd: false
   },
   tournament: null,
-  joinedTourney: false
+  joinedTourney: false,
+  regime: null
 };
 
 // Subtle Web Audio Synthesizer
@@ -344,7 +345,11 @@ const elements = {
   metricProfitFactor: document.getElementById('metricProfitFactor'),
   metricWinRate: document.getElementById('metricWinRate'),
   metricWinLossRatio: document.getElementById('metricWinLossRatio'),
-  metricPayoffRatio: document.getElementById('metricPayoffRatio')
+  metricPayoffRatio: document.getElementById('metricPayoffRatio'),
+  // Market Regime Elements (v0.7)
+  regimePill: document.getElementById('regimePill'),
+  regimeDot: document.getElementById('regimeDot'),
+  regimeName: document.getElementById('regimeName')
 };
 
 // Formatting Utilities
@@ -1888,6 +1893,9 @@ socket.on('init:state', (data) => {
   if (data.tournament) {
     renderTournamentState(data.tournament);
   }
+  if (data.regime) {
+    renderRegime(data.regime);
+  }
 });
 
 socket.on('clock:tick', (clk) => {
@@ -2183,6 +2191,49 @@ socket.on('tournament:tick', (tourney) => {
 
 socket.on('tournament:concluded', (podiumData) => {
   handleTournamentConcluded(podiumData);
+});
+
+// Market Microstructure Regime Logic (v0.7)
+function renderRegime(regime) {
+  if (!regime || !elements.regimePill) return;
+  state.regime = regime;
+
+  const nameMap = {
+    NORMAL: 'regime-normal',
+    LOW_VOLATILITY: 'regime-low',
+    BREAKOUT: 'regime-breakout',
+    HIGH_VOLATILITY: 'regime-high',
+    FLASH_CRASH: 'regime-crash'
+  };
+
+  elements.regimePill.className = `regime-pill ${nameMap[regime.name] || 'regime-normal'}`;
+  if (elements.regimeName) {
+    elements.regimeName.textContent = regime.label ? regime.label.toUpperCase() : regime.name;
+  }
+  elements.regimePill.title = `${regime.label}: ${regime.description}`;
+
+  // Toast alert on sudden high-impact regimes
+  if (regime.name === 'FLASH_CRASH') {
+    showAchievementToast({
+      id: 'FLASH_CRASH_ALERT',
+      title: 'Flash Crash Alert',
+      description: 'Liquidity shock across order books. Market makers widening spreads.',
+      rewardCredits: 0,
+      icon: '⚠️'
+    });
+  } else if (regime.name === 'BREAKOUT') {
+    showAchievementToast({
+      id: 'BREAKOUT_ALERT',
+      title: 'Market Breakout Detected',
+      description: 'Momentum surge detected across high-beta equities.',
+      rewardCredits: 0,
+      icon: '🚀'
+    });
+  }
+}
+
+socket.on('regime:change', (regime) => {
+  renderRegime(regime);
 });
 
 // App Startup

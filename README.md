@@ -2,17 +2,17 @@
 
 ## Repository Metadata
 
-- **Current Pushed Version:** v0.6
+- **Current Pushed Version:** v0.7
 - **Username:** AryanTechie-007
-- **Push Timestamp:** 2026-09-10 23:25:00 IST (UTC+05:30)
-- **Current Status:** Deployed Build (Quantitative Risk Analytics & Tournament Mode Release)
+- **Push Timestamp:** 2026-09-10 23:35:00 IST (UTC+05:30)
+- **Current Status:** Deployed Build (Advanced Algorithmic NPCs & Market Regimes Release)
 - **Repository:** https://github.com/AryanTechie-007/Stock-Market-Sim
 
 ---
 
 ## Overview
 
-MarketArena is a high-performance, gamified financial market simulator and quantitative trading terminal built with Node.js, Express, Socket.IO, and a vanilla JavaScript frontend terminal. The platform provides a realistic, continuous double-auction equity exchange featuring FIFO price-time order matching, conditional stop and bracket orders, margin leverage, short selling, an automated liquidation engine, multi-asset portfolio accounting, quantitative risk metrics (Sharpe ratio, maximum drawdown, profit factor, win rate), competitive multi-player speed tournaments, multi-timeframe candlestick generation, institutional-grade technical analysis indicators, simulated market clock cycles, eight autonomous algorithmic NPC traders, an achievements milestone engine, end-of-day settlement summaries, and native relational state persistence.
+MarketArena is a high-performance, gamified financial market simulator and quantitative trading terminal built with Node.js, Express, Socket.IO, and a vanilla JavaScript frontend terminal. The platform provides a realistic, continuous double-auction equity exchange featuring FIFO price-time order matching, conditional stop and bracket orders, margin leverage, short selling, an automated liquidation engine, multi-asset portfolio accounting, quantitative risk metrics (Sharpe ratio, maximum drawdown, profit factor, win rate), competitive multi-player speed tournaments, an adaptive market regime engine, ten autonomous algorithmic NPC traders (including statistical arbitrageurs and iceberg order execution whales), multi-timeframe candlestick generation, institutional-grade technical analysis indicators, simulated market clock cycles, an achievements milestone engine, end-of-day settlement summaries, and native relational state persistence.
 
 ---
 
@@ -130,18 +130,29 @@ Standardized multiplayer tournament arena supporting high-speed round competitio
 - **Day Rollover:** Resets intraday accumulators, snapshots new opening net worth, and transitions cleanly into the next trading day.
 
 ### 9. Algorithmic NPC Traders (`traders/`)
-Eight autonomous trading bots interact with the matching engine to provide realistic market depth and price discovery:
-- **Market Makers (MM Alpha Securities, Apex Liquidity LP):** Continuous two-sided limit orders with dynamic volatility spread expansion.
+Ten autonomous algorithmic trading bots interact with the matching engine to provide realistic market depth, cross-asset price discovery, and institutional order flow:
+- **Market Makers (MM Alpha Securities, Apex Liquidity LP):** Continuous two-sided limit orders with dynamic volatility spread expansion based on macroeconomic regimes.
+- **Statistical Arbitrageur (Citadel StatArb Alpha):** Real-time monitoring of cointegrated equity pairs (AUTO vs. SOLR, BYTE vs. NBNK), submitting pairs trades upon ratio divergences (|z| > 1.8) and unwinding upon mean reversion.
+- **Institutional Whale (BlackRock Execution LP):** Iceberg block order execution bot that slices large institutional orders (800 - 2,500 shares) into small visible tranches (40 - 120 shares), automatically replenishing upon fill.
 - **Momentum Traders (Velocity Quant Bot, TrendRider Algorithmic):** Dual SMA momentum breakouts and breaking news catalyst executions.
 - **Value Investors (DeepValue Asset Mgmt, Horizon Fundamental Fund):** Intrinsic value evaluation with safety margins.
 - **Noise / Retail Traders (Retail Swarm Alpha, Retail Swarm Beta):** Stochastic retail order flow.
+
+### 10. Adaptive Market Regime Engine (`engine/regimes.js`)
+Macroeconomic volatility coordinator modulating market-wide spreads, price volatility, and bot aggression:
+- **NORMAL:** Baseline equilibrium conditions (1.0x spread multiplier, 1.0x volatility multiplier).
+- **LOW_VOLATILITY:** Tight consolidation with compressed spreads (0.75x) and reduced tick volatility.
+- **BREAKOUT:** Directional momentum impulse with expanding volume (2.2x) and wider directional ranges.
+- **HIGH_VOLATILITY:** Liquidity drought where market makers expand spreads (2.2x) to protect capital.
+- **FLASH_CRASH:** Severe liquidity withdrawal with cascading aggressive sell orders and 3.5x spread expansion, followed by automated mean-reversion recovery.
+- **Live WebSocket Broadcasting:** Regime transitions stream in real-time across `regime:change` and `regime:tick` events.
 
 ---
 
 ## User Interface and Trading Terminal (`public/`)
 
 The web client provides a professional desktop terminal layout:
-- **Top Bar:** Market clock phase display, simulated time, session countdown timer, global ticker tape, Blitz tournament status bar and countdown timer, audio mute toggle, callsign manager.
+- **Top Bar:** Market clock phase display, simulated time, session countdown timer, global ticker tape, Market Regime HUD indicator pill with live pulse status, Blitz tournament status bar and countdown timer, audio mute toggle, callsign manager.
 - **Watchlist and Fundamentals:** Multi-asset ticker list with real-time percentage changes, company descriptions, P/E ratios, market caps, and sentiment indicators.
 - **Interactive Candlestick & Volume Chart with Technical Suite:**
   - HTML5 Canvas chart displaying real-time OHLC candlestick bodies and wicks.
@@ -243,12 +254,28 @@ To execute the competitive tournament coordinator test suite:
 node tests/tournament.test.js
 ```
 
+To execute the adaptive market regime engine test suite:
+```bash
+node tests/regimes.test.js
+```
+
+To execute the statistical arbitrage algorithmic bot test suite:
+```bash
+node tests/arbitrage.test.js
+```
+
+To execute the iceberg whale institutional bot test suite:
+```bash
+node tests/iceberg.test.js
+```
+
 To execute the live WebSocket integration tests:
 ```bash
 node tests/tier2_e2e_simulation.js
 node tests/v04_e2e_simulation.js
 node tests/v05_e2e_simulation.js
 node tests/v06_e2e_simulation.js
+node tests/v07_e2e_simulation.js
 ```
 
 ### Verified Test Cases:
@@ -279,6 +306,10 @@ node tests/v06_e2e_simulation.js
 25. Quantitative analytics: Sharpe ratio risk-adjusted return calculation.
 26. Tournament coordinator: Bankroll initialization, isolated round ledger, and trade settlement.
 27. Tournament coordinator: Mark-to-market leaderboard, podium ranking, and prize bonus awards.
+28. Adaptive market regime engine: Macroeconomic state transitions, dynamic spread multipliers (up to 3.5x), and volatility multipliers.
+29. Statistical arbitrage: Cointegrated pairs price-ratio tracking, rolling Z-score calculation, threshold divergence entry, and mean reversion unwinding.
+30. Iceberg whale execution: Institutional parent block slicing, visible tranche placement, reserve depth concealment, and automatic fill replenishment.
+31. Autonomous NPC fleet: 10 concurrent algorithmic bots spanning 6 specialized archetypes responding synchronously to macroeconomic regime shifts.
 
 ---
 
@@ -289,4 +320,5 @@ node tests/v06_e2e_simulation.js
 - **v0.3 (Pushed to GitHub):** Advanced order types (Stop Loss & Stop Limit), 7 gamified achievements with credit rewards and HUD toasts, multi-day progression with End-of-Day recap modal, smarter NPC behavior (volatility spreads, news catalysts, SMA momentum), and full 10-test automated suite.
 - **v0.4 (Pushed to GitHub):** Advanced execution mechanics: Trailing Stop orders with dynamic peak/trough ratcheting, OCO (One-Cancels-the-Other) bracket orders with mutual counterpart cancellation, Margin Trading with up to 5x leverage, Short Selling with borrow collateral mechanics, automated maintenance margin monitoring and forced liquidation engine, SQLite schema migrations for margin loans and short positions.
 - **v0.5 (Pushed to GitHub):** Technical Analysis & Multi-Timeframe Charting Suite: Multi-timeframe candlestick engine (1s, 5s, 15s, 1m, 5m), overlay indicators (SMA 20/50, EMA 9/21, Bollinger Bands with shaded channel, session VWAP), lower Oscillator sub-panel (RSI 14 with 70/30 thresholds, MACD with signal line and colored histogram), expanded interactive HUD crosshair, and mathematical indicator test suite.
-- **v0.6 (Current Release):** Quantitative Risk Analytics & Competitive Tournament Mode: Zero-dependency quantitative performance engine (Sharpe Ratio, Maximum Drawdown %, Profit Factor, Win Rate %, Win/Loss Ratio, Payoff Ratio) integrated into portfolio tracking and WebSockets; Competitive Blitz Tournament Coordinator featuring standardized 50,000 CR bankrolls, automated round lifecycle transitions (Countdown, Active, Concluded), mark-to-market live rankings, isolated trade accounting, top-3 podium cash awards (1st +5,000 CR, 2nd +3,000 CR, 3rd +1,500 CR) deposited to primary accounts, dedicated Tournament Arena tab, and celebratory podium modal.
+- **v0.6 (Pushed to GitHub):** Quantitative Risk Analytics & Competitive Tournament Mode: Zero-dependency quantitative performance engine (Sharpe Ratio, Maximum Drawdown %, Profit Factor, Win Rate %, Win/Loss Ratio, Payoff Ratio) integrated into portfolio tracking and WebSockets; Competitive Blitz Tournament Coordinator featuring standardized 50,000 CR bankrolls, automated round lifecycle transitions (Countdown, Active, Concluded), mark-to-market live rankings, isolated trade accounting, top-3 podium cash awards (1st +5,000 CR, 2nd +3,000 CR, 3rd +1,500 CR) deposited to primary accounts, dedicated Tournament Arena tab, and celebratory podium modal.
+- **v0.7 (Current Release):** Advanced Algorithmic NPCs & Adaptive Market Regimes: Autonomous macroeconomic state coordinator (MarketRegimeEngine) transitioning between NORMAL, LOW_VOLATILITY, BREAKOUT, HIGH_VOLATILITY, and FLASH_CRASH states with dynamic spread and volatility multipliers; Statistical Arbitrage Bot (StatisticalArbitrageTrader) tracking cointegrated synthetic pairs (AUTO/SOLR, BYTE/NBNK) via rolling Z-scores with entry on divergence and exit on mean reversion; Iceberg Whale Bot (IcebergWhaleTrader) slicing institutional orders (800 - 2,500 shares) into small visible tranches (40 - 120 shares) with automatic post-fill replenishment while concealing reserve depth; dynamic Market Maker quote spread scaling; and real-time Topbar Regime HUD indicator pill with status-colored pulse animations and breaking catalyst toast notifications.

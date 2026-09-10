@@ -16,6 +16,14 @@ export class MarketMaker extends BaseTrader {
     });
     this.spreadTarget = options.spreadTarget || 0.008; // 0.8% spread
     this.volatilitySpreads = new Map(); // symbol -> multiplier
+    this.regimeMultiplier = 1.0;
+  }
+
+  setRegimeMultiplier(multiplier) {
+    this.regimeMultiplier = multiplier || 1.0;
+    for (const comp of this.marketManager.getAllCompanies()) {
+      this.cancelAllMyOrders(comp.symbol);
+    }
   }
 
   reactToNews(newsItem) {
@@ -48,7 +56,7 @@ export class MarketMaker extends BaseTrader {
     this.cancelAllMyOrders(symbol);
 
     const spreadMult = this.volatilitySpreads.get(symbol) || 1.0;
-    const effectiveSpread = this.spreadTarget * spreadMult;
+    const effectiveSpread = this.spreadTarget * spreadMult * (this.regimeMultiplier || 1.0);
     const halfSpread = (lastPrice * effectiveSpread) / 2;
 
     // Inventory rebalancing skew

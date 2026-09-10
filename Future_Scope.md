@@ -4,7 +4,7 @@
 
 This document outlines the architectural roadmap and deep feature queue for MarketArena as the platform progresses from its current local testing phase toward a public-facing, multi-tenant quantitative trading and market simulation platform.
 
-Features completed in releases (e.g. SQLite persistence, achievements, multi-day rollover, stop-loss, stop-limit, trailing stops, OCO bracket orders, margin trading, short selling, multi-timeframe candles, institutional indicators, quantitative risk analytics, and tournament mode) are migrated into production documentation upon verification.
+Features completed in releases (e.g. SQLite persistence, achievements, multi-day rollover, stop-loss, stop-limit, trailing stops, OCO bracket orders, margin trading, short selling, multi-timeframe candles, institutional indicators, quantitative risk analytics, tournament mode, adaptive market regimes, statistical arbitrage bots, and iceberg order execution) are migrated into production documentation upon verification.
 
 ---
 
@@ -25,21 +25,7 @@ Features completed in releases (e.g. SQLite persistence, achievements, multi-day
 
 ---
 
-## 2. Algorithmic NPC Intelligence and Market Microstructure
-
-### Adaptive Market Regime Engine
-- Introduce dynamic volatility regimes (e.g., Low Volatility Consolidation, Earnings Breakout, High-Volatility Liquidity Drought, Flash Crash).
-- Dynamic spread expansion by Market Maker bots during unexpected breaking news events.
-
-### Advanced Algorithmic Bot Archetypes
-- **Statistical Arbitrage Bots:** Exploit cross-asset correlations between sector peers (e.g., AUTO vs. SOLR).
-- **Iceberg Order Bots:** Break large institutional orders into small visible tranches to disguise market impact.
-- **Reinforcement Learning (RL) Agents:** Deploy lightweight neural agents trained via Q-learning to discover profitable microstructure strategies against human retail flow.
-- **News NLP Parsing:** Transition from predefined news template impact factors to fine-tuned sentiment extraction from generated financial headlines.
-
----
-
-## 3. Programmatic Bot API and Developer SDK
+## 2. Programmatic Bot API and Developer SDK
 
 ### Public Trading API
 - Provide a standardized RESTful API and WebSocket API allowing external developers to connect custom trading scripts directly to MarketArena.
@@ -59,7 +45,7 @@ Features completed in releases (e.g. SQLite persistence, achievements, multi-day
 
 ---
 
-## 4. Frontend Terminal Modernization
+## 3. Frontend Terminal Modernization
 
 ### Responsive Layout
 - Fully responsive mobile and tablet interface with touch-optimized order entry drawers.
@@ -71,7 +57,7 @@ Features completed in releases (e.g. SQLite persistence, achievements, multi-day
 
 ---
 
-## 5. Production Deployment and Security
+## 4. Production Deployment and Security
 
 ### Infrastructure Configuration
 - Docker containerization for matching engine, background workers, and web frontend.
