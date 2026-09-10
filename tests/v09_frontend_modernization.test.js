@@ -2,6 +2,7 @@ import assert from 'assert';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import vm from 'vm';
 
 console.log('[TEST] Starting v0.9 Frontend Modernization & Responsive Layout Test Suite...\n');
 
@@ -64,5 +65,16 @@ assert(jsContent.includes('function testAuditionSound('), 'Should define testAud
 assert(jsContent.includes('getChannelGain('), 'Should compute channel gain with master volume');
 console.log('[PASS] JavaScript layout presets, sound board logic, and mobile drawer verified\n');
 
+// 4. Verify JavaScript Compilation & Zero Syntax Errors
+console.log('Test 4: JavaScript Syntax & Script Compilation Verification');
+try {
+  vm.compileFunction(jsContent);
+  console.log('[PASS] public/js/app.js parsed and compiled cleanly with zero syntax errors\n');
+} catch (syntaxErr) {
+  assert.fail(`public/js/app.js has syntax error: ${syntaxErr.message}`);
+}
+
+
 console.log('[SUCCESS] ALL FRONTEND MODERNIZATION TESTS PASSED!\n');
 process.exit(0);
+

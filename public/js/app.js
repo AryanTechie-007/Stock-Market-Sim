@@ -1338,20 +1338,7 @@ function renderOpenOrders(openOrders) {
     elements.openOrdersTableBody.appendChild(row);
   }
 }
-      <td><b>${ord.symbol}</b></td>
-      <td class="${sideCls}">${ord.side}</td>
-      <td>${typeBadge}</td>
-      <td>${priceDisplay}</td>
-      <td>${ord.originalQuantity}</td>
-      <td>${ord.quantity}</td>
-      <td>${new Date(ord.timestamp).toLocaleTimeString()}</td>
-      <td style="text-align:right">
-        <button class="btn-cancel" onclick="cancelOrder('${ord.symbol}', '${ord.id}')">CANCEL</button>
-      </td>
-    `;
-    elements.openOrdersTableBody.appendChild(row);
-  }
-}
+
 
 window.cancelOrder = function(symbol, orderId) {
   socket.emit('order:cancel', { symbol, orderId }, (res) => {
