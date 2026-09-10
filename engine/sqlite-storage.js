@@ -92,6 +92,17 @@ export class SQLiteStorageManager {
       CREATE INDEX IF NOT EXISTS idx_trade_history_user ON trade_history(user_id, timestamp DESC);
       CREATE INDEX IF NOT EXISTS idx_holdings_user ON holdings(user_id);
       CREATE INDEX IF NOT EXISTS idx_achievements_user ON achievements(user_id);
+
+      CREATE TABLE IF NOT EXISTS api_keys (
+        key_id TEXT PRIMARY KEY,
+        secret TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        name TEXT,
+        permissions TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        active INTEGER NOT NULL DEFAULT 1
+      );
+      CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_id);
     `);
 
     // Dynamic column migrations for backward compatibility
@@ -323,6 +334,85 @@ export class SQLiteStorageManager {
       this.db.close();
     } catch (err) {
       // Ignored
+    }
+  }
+
+  /**
+   * Persist API Key in SQLite
+   */
+  saveApiKey({ keyId, secret, userId, name, permissions, createdAt, active = 1 }) {
+    try {
+      const stmt = this.db.prepare(`
+        INSERT OR REPLACE INTO api_keys (key_id, secret, user_id, name, permissions, created_at, active)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `);
+      stmt.run(
+        keyId,
+        secret,
+        userId,
+        name || 'API Key',
+        Array.isArray(permissions) ? JSON.stringify(permissions) : permissions,
+        createdAt || Date.now(),
+        active ? 1 : 0
+      );
+    } catch (err) {
+      console.error('[SQLite] Error saving API key:', err.message);
+    }
+  }
+
+  /**
+   * Get single API key record
+   */
+  getApiKey(keyId) {
+    try {
+      const stmt = this.db.prepare(`
+        SELECT key_id as keyId, secret, user_id as userId, name, permissions, created_at as createdAt, active
+        FROM api_keys WHERE key_id = ?
+      `);
+      const row = stmt.get(keyId);
+      if (!row) return null;
+      return {
+        ...row,
+        permissions: JSON.parse(row.permissions || '[]'),
+        active: Boolean(row.active)
+      };
+    } catch (err) {
+      console.error('[SQLite] Error getting API key:', err.message);
+      return null;
+    }
+  }
+
+  /**
+   * Get all active API keys for a user
+   */
+  getUserApiKeys(userId) {
+    try {
+      const stmt = this.db.prepare(`
+        SELECT key_id as keyId, secret, user_id as userId, name, permissions, created_at as createdAt, active
+        FROM api_keys WHERE user_id = ? AND active = 1
+        ORDER BY created_at DESC
+      `);
+      const rows = stmt.all(userId);
+      return rows.map(row => ({
+        ...row,
+        permissions: JSON.parse(row.permissions || '[]'),
+        active: Boolean(row.active)
+      }));
+    } catch (err) {
+      console.error('[SQLite] Error getting user API keys:', err.message);
+      return [];
+    }
+  }
+
+  /**
+   * Revoke/delete an API key
+   */
+  deleteApiKey(keyId) {
+    try {
+      const stmt = this.db.prepare(`UPDATE api_keys SET active = 0 WHERE key_id = ?`);
+      stmt.run(keyId);
+    } catch (err) {
+      console.error('[SQLite] Error deleting API key:', err.message);
     }
   }
 }

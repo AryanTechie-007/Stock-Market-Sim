@@ -1818,4 +1818,28 @@ tbody tr:hover td {
   100% { border-color: rgba(239, 68, 68, 0.9); }
 }
 
+/* ----------------------------------------------------
+   DEVELOPER PORTAL & API KEY MODAL (v0.8)
+   ---------------------------------------------------- */
+.api-key-box {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+}
+
+.api-key-card input {
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.api-key-card input:focus {
+  border-color: #38bdf8 !important;
+}
+
+#apiCodeSnippet {
+  user-select: text;
+  white-space: pre;
+}
+
+
 

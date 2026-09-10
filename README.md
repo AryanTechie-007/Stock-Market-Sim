@@ -2,10 +2,10 @@
 
 ## Repository Metadata
 
-- **Current Pushed Version:** v0.7
+- **Current Pushed Version:** v0.8
 - **Username:** AryanTechie-007
-- **Push Timestamp:** 2026-09-10 23:35:00 IST (UTC+05:30)
-- **Current Status:** Deployed Build (Advanced Algorithmic NPCs & Market Regimes Release)
+- **Push Timestamp:** 2026-09-10 23:45:00 IST (UTC+05:30)
+- **Current Status:** Deployed Build (Programmatic Bot API & Developer SDK Release)
 - **Repository:** https://github.com/AryanTechie-007/Stock-Market-Sim
 
 ---
@@ -184,6 +184,37 @@ The web client provides a professional desktop terminal layout:
 - **Tournament Podium Modal:** Concluded round celebration card presenting gold, silver, and bronze podium finishers with net returns and cash prize allocations.
 - **Audio Feedback:** Synthesized Web Audio tones for order fills, session opening and closing bells, breaking economic news alerts, stop order triggers, and milestone unlocks.
 
+### 11. Programmatic Bot API & Developer SDK Engine (`engine/api-keys.js`, `engine/rate-limiter.js`, `sdk/`)
+- **Public RESTful Endpoints (`/api/v1`):**
+  - `GET /api/v1/ping`: Server health check, phase, and timestamp.
+  - `GET /api/v1/regime`: Query active macroeconomic market regime and multipliers.
+  - `GET /api/v1/orderbook/:symbol`: Fetch real-time L2 order book depth (bids, asks, spread).
+  - `GET /api/v1/candles/:symbol`: Query historical OHLCV candlestick bars across all resolutions (`1s`, `5s`, `15s`, `1m`, `5m`).
+  - `POST /api/v1/keys`: Generate cryptographically randomized API key pairs for trader accounts.
+  - `GET /api/v1/keys`: Query active API keys for a trader.
+  - `DELETE /api/v1/keys/:keyId`: Revoke an active API key.
+  - `GET /api/v1/account`: Query portfolio balances, cash, margin debt, and quantitative risk metrics.
+  - `GET /api/v1/orders`: List active resting orders for the authenticated bot.
+  - `POST /api/v1/orders`: Execute limit, market, stop-loss, stop-limit, trailing stop, and margin/short orders programmatically.
+  - `DELETE /api/v1/orders/:id`: Cancel resting orders by order ID.
+- **HMAC-SHA256 Cryptographic Authentication:**
+  - Header signature authentication using `X-API-KEY`, `X-API-TIMESTAMP`, and `X-API-SIGNATURE` (`timestamp + method + path + body`).
+  - 60-second replay attack protection window.
+  - Granular permission scopes (`read` vs. `trade`).
+- **Token-Bucket Rate Limiter:**
+  - In-memory token bucket rate limiting per API key or IP address (capacity: 100 requests, refill: 20 tokens/sec).
+  - Emits standard `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset` HTTP headers.
+  - Rejects rate-limit breaches with HTTP 429 Too Many Requests and `Retry-After` headers.
+- **Zero-Dependency Python 3 Client SDK (`sdk/python/marketarena.py`):**
+  - Pure standard library Python client supporting HMAC request signing, order placement, book inspection, and optional Pandas DataFrame export.
+  - Includes ready-to-run algorithmic bot script (`sdk/python/example_bot.py`).
+- **Zero-Dependency JavaScript Node.js Client SDK (`sdk/js/marketarena.js`):**
+  - Asynchronous client class supporting automated request signing and promise-based market interactions.
+  - Includes ready-to-run algorithmic bot script (`sdk/js/example_bot.js`).
+- **In-Terminal Developer Portal Modal:**
+  - Dedicated "DEV API" topbar button launching the interactive portal.
+  - One-click API key generation, credential reveal/hide toggles, clipboard copying, and live code snippet generation for Python, Node.js, and cURL.
+
 ---
 
 ## Technology Stack
@@ -269,6 +300,21 @@ To execute the iceberg whale institutional bot test suite:
 node tests/iceberg.test.js
 ```
 
+To execute the API security, authentication, and rate limiting test suite:
+```bash
+node tests/api_security.test.js
+```
+
+To execute the public RESTful endpoints test suite:
+```bash
+node tests/rest_api.test.js
+```
+
+To execute the developer SDK client test suite (JS and Python):
+```bash
+node tests/sdk_client.test.js
+```
+
 To execute the live WebSocket integration tests:
 ```bash
 node tests/tier2_e2e_simulation.js
@@ -276,6 +322,7 @@ node tests/v04_e2e_simulation.js
 node tests/v05_e2e_simulation.js
 node tests/v06_e2e_simulation.js
 node tests/v07_e2e_simulation.js
+node tests/v08_e2e_simulation.js
 ```
 
 ### Verified Test Cases:
@@ -310,6 +357,10 @@ node tests/v07_e2e_simulation.js
 29. Statistical arbitrage: Cointegrated pairs price-ratio tracking, rolling Z-score calculation, threshold divergence entry, and mean reversion unwinding.
 30. Iceberg whale execution: Institutional parent block slicing, visible tranche placement, reserve depth concealment, and automatic fill replenishment.
 31. Autonomous NPC fleet: 10 concurrent algorithmic bots spanning 6 specialized archetypes responding synchronously to macroeconomic regime shifts.
+32. Cryptographic API key generation, SQLite persistence, and HMAC-SHA256 signature verification.
+33. Replay attack defense and granular permission scope enforcement (read vs. trade).
+34. Token-bucket rate limiter burst enforcement and HTTP 429 exhaustion handling.
+35. Programmatic algorithmic bot integration and execution via Python and JavaScript SDKs.
 
 ---
 
@@ -321,4 +372,5 @@ node tests/v07_e2e_simulation.js
 - **v0.4 (Pushed to GitHub):** Advanced execution mechanics: Trailing Stop orders with dynamic peak/trough ratcheting, OCO (One-Cancels-the-Other) bracket orders with mutual counterpart cancellation, Margin Trading with up to 5x leverage, Short Selling with borrow collateral mechanics, automated maintenance margin monitoring and forced liquidation engine, SQLite schema migrations for margin loans and short positions.
 - **v0.5 (Pushed to GitHub):** Technical Analysis & Multi-Timeframe Charting Suite: Multi-timeframe candlestick engine (1s, 5s, 15s, 1m, 5m), overlay indicators (SMA 20/50, EMA 9/21, Bollinger Bands with shaded channel, session VWAP), lower Oscillator sub-panel (RSI 14 with 70/30 thresholds, MACD with signal line and colored histogram), expanded interactive HUD crosshair, and mathematical indicator test suite.
 - **v0.6 (Pushed to GitHub):** Quantitative Risk Analytics & Competitive Tournament Mode: Zero-dependency quantitative performance engine (Sharpe Ratio, Maximum Drawdown %, Profit Factor, Win Rate %, Win/Loss Ratio, Payoff Ratio) integrated into portfolio tracking and WebSockets; Competitive Blitz Tournament Coordinator featuring standardized 50,000 CR bankrolls, automated round lifecycle transitions (Countdown, Active, Concluded), mark-to-market live rankings, isolated trade accounting, top-3 podium cash awards (1st +5,000 CR, 2nd +3,000 CR, 3rd +1,500 CR) deposited to primary accounts, dedicated Tournament Arena tab, and celebratory podium modal.
-- **v0.7 (Current Release):** Advanced Algorithmic NPCs & Adaptive Market Regimes: Autonomous macroeconomic state coordinator (MarketRegimeEngine) transitioning between NORMAL, LOW_VOLATILITY, BREAKOUT, HIGH_VOLATILITY, and FLASH_CRASH states with dynamic spread and volatility multipliers; Statistical Arbitrage Bot (StatisticalArbitrageTrader) tracking cointegrated synthetic pairs (AUTO/SOLR, BYTE/NBNK) via rolling Z-scores with entry on divergence and exit on mean reversion; Iceberg Whale Bot (IcebergWhaleTrader) slicing institutional orders (800 - 2,500 shares) into small visible tranches (40 - 120 shares) with automatic post-fill replenishment while concealing reserve depth; dynamic Market Maker quote spread scaling; and real-time Topbar Regime HUD indicator pill with status-colored pulse animations and breaking catalyst toast notifications.
+- **v0.7 (Pushed to GitHub):** Advanced Algorithmic NPCs & Adaptive Market Regimes: Autonomous macroeconomic state coordinator (MarketRegimeEngine) transitioning between NORMAL, LOW_VOLATILITY, BREAKOUT, HIGH_VOLATILITY, and FLASH_CRASH states with dynamic spread and volatility multipliers; Statistical Arbitrage Bot (StatisticalArbitrageTrader) tracking cointegrated synthetic pairs (AUTO/SOLR, BYTE/NBNK) via rolling Z-scores with entry on divergence and exit on mean reversion; Iceberg Whale Bot (IcebergWhaleTrader) slicing institutional orders (800 - 2,500 shares) into small visible tranches (40 - 120 shares) with automatic post-fill replenishment while concealing reserve depth; dynamic Market Maker quote spread scaling; and real-time Topbar Regime HUD indicator pill with status-colored pulse animations and breaking catalyst toast notifications.
+- **v0.8 (Current Release):** Programmatic Bot API & Developer SDK: Comprehensive RESTful trading API and WebSocket streaming architecture for external algorithmic bots; HMAC-SHA256 cryptographic request signing (X-API-KEY, X-API-TIMESTAMP, X-API-SIGNATURE) with replay protection; token-bucket rate limiting (capacity 100, refill 20 tokens/sec); full REST endpoints for public market data (/api/v1/orderbook/:symbol, /api/v1/candles/:symbol, /api/v1/regime, /api/v1/ping) and authenticated trading operations (/api/v1/account, /api/v1/orders, /api/v1/keys); zero-dependency Python 3 Client SDK (sdk/python/marketarena.py); zero-dependency JavaScript Node.js Client SDK (sdk/js/marketarena.js); plug-and-play bot example scripts; and interactive in-terminal Developer Portal modal with one-click credential generation and code snippet exporter.

@@ -202,6 +202,20 @@ const elements = {
   displayUserId: document.getElementById('displayUserId'),
   editNameBtn: document.getElementById('editNameBtn'),
   audioToggle: document.getElementById('audioToggle'),
+  apiKeyBtn: document.getElementById('apiKeyBtn'),
+  apiKeyModal: document.getElementById('apiKeyModal'),
+  closeApiKeyModalBtn: document.getElementById('closeApiKeyModalBtn'),
+  dismissApiKeyModalBtn: document.getElementById('dismissApiKeyModalBtn'),
+  genNewKeyBtn: document.getElementById('genNewKeyBtn'),
+  displayApiKey: document.getElementById('displayApiKey'),
+  displayApiSecret: document.getElementById('displayApiSecret'),
+  toggleApiSecretBtn: document.getElementById('toggleApiSecretBtn'),
+  copyApiKeyBtn: document.getElementById('copyApiKeyBtn'),
+  copyApiSecretBtn: document.getElementById('copyApiSecretBtn'),
+  btnTabPython: document.getElementById('btnTabPython'),
+  btnTabNode: document.getElementById('btnTabNode'),
+  btnTabCurl: document.getElementById('btnTabCurl'),
+  apiCodeSnippet: document.getElementById('apiCodeSnippet'),
   // News
   newsHeadline: document.getElementById('newsHeadline'),
   // Watchlist & Fundamentals
@@ -2235,6 +2249,195 @@ function renderRegime(regime) {
 socket.on('regime:change', (regime) => {
   renderRegime(regime);
 });
+
+// Developer Portal & API Keys Modal (v0.8)
+let currentSnippetTab = 'python';
+let activeUserApiKey = null;
+let activeUserApiSecret = null;
+
+function renderApiCodeSnippet() {
+  if (!elements.apiCodeSnippet) return;
+  const kId = activeUserApiKey || 'YOUR_API_KEY';
+  const sec = activeUserApiSecret || 'YOUR_API_SECRET';
+  const host = window.location.origin;
+
+  if (currentSnippetTab === 'python') {
+    elements.apiCodeSnippet.textContent = `# 1. Import Python Client
+from sdk.python.marketarena import MarketArenaClient
+
+client = MarketArenaClient(
+    base_url="${host}",
+    api_key="${kId}",
+    api_secret="${sec}"
+)
+
+# 2. Query Live Order Book
+book = client.get_orderbook('BYTE', depth=5)
+print("Top Ask:", book['asks'][0]['price'])
+
+# 3. Place Automated Limit Order
+order = client.place_order(
+    symbol='BYTE',
+    side='BUY',
+    quantity=5,
+    order_type='LIMIT',
+    price=book['asks'][0]['price']
+)
+print("Executed Order:", order['order']['id'])`;
+  } else if (currentSnippetTab === 'node') {
+    elements.apiCodeSnippet.textContent = `// 1. Import Node.js Client
+import { MarketArenaClient } from './sdk/js/marketarena.js';
+
+const client = new MarketArenaClient({
+  baseUrl: '${host}',
+  apiKey: '${kId}',
+  apiSecret: '${sec}'
+});
+
+// 2. Fetch Live L2 Depth
+const book = await client.getOrderbook('BYTE', 5);
+console.log('Top Ask:', book.asks[0].price);
+
+// 3. Submit Programmatic Trade
+const res = await client.placeOrder({
+  symbol: 'BYTE',
+  side: 'BUY',
+  type: 'LIMIT',
+  price: book.asks[0].price,
+  quantity: 5
+});
+console.log('Placed order:', res.order.id);`;
+  } else {
+    elements.apiCodeSnippet.textContent = `# 1. Health Check
+curl -X GET "${host}/api/v1/ping"
+
+# 2. Get L2 Order Book Depth
+curl -X GET "${host}/api/v1/orderbook/BYTE?depth=5"
+
+# 3. Authenticated Account Query
+curl -X GET "${host}/api/v1/account" \\
+  -H "X-API-KEY: ${kId}" \\
+  -H "X-API-SECRET: ${sec}"
+
+# 4. Programmatic Order Placement
+curl -X POST "${host}/api/v1/orders" \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-KEY: ${kId}" \\
+  -H "X-API-SECRET: ${sec}" \\
+  -d '{"symbol":"BYTE","side":"BUY","quantity":5,"type":"LIMIT","price":1250.00}'`;
+  }
+}
+
+async function loadApiCredentials() {
+  if (!state.user || !state.user.id) return;
+  try {
+    const res = await fetch(`/api/v1/keys?userId=${state.user.id}`).then(r => r.json());
+    if (res.success && res.keys && res.keys.length > 0) {
+      const active = res.keys[0];
+      activeUserApiKey = active.keyId;
+      activeUserApiSecret = active.secret;
+      if (elements.displayApiKey) elements.displayApiKey.value = activeUserApiKey;
+      if (elements.displayApiSecret) elements.displayApiSecret.value = activeUserApiSecret;
+    } else {
+      // Auto-generate initial bot key
+      await generateNewApiKey();
+    }
+    renderApiCodeSnippet();
+  } catch (err) {
+    console.error('Error loading API credentials:', err);
+  }
+}
+
+async function generateNewApiKey() {
+  if (!state.user || !state.user.id) return;
+  try {
+    const res = await fetch('/api/v1/keys', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: state.user.id,
+        name: `${state.user.name}_Bot_Key`,
+        permissions: ['read', 'trade']
+      })
+    }).then(r => r.json());
+
+    if (res.success && res.key) {
+      activeUserApiKey = res.key.keyId;
+      activeUserApiSecret = res.key.secret;
+      if (elements.displayApiKey) elements.displayApiKey.value = activeUserApiKey;
+      if (elements.displayApiSecret) elements.displayApiSecret.value = activeUserApiSecret;
+      renderApiCodeSnippet();
+      showAchievementToast({
+        id: 'API_KEY_CREATED',
+        title: 'API Credentials Generated',
+        description: `Bot Key ${activeUserApiKey.slice(0, 12)}... ready to use`,
+        rewardCredits: 0,
+        icon: '🔑'
+      });
+    }
+  } catch (err) {
+    console.error('Error generating API key:', err);
+  }
+}
+
+if (elements.apiKeyBtn) {
+  elements.apiKeyBtn.addEventListener('click', () => {
+    if (elements.apiKeyModal) {
+      elements.apiKeyModal.classList.remove('hidden');
+      loadApiCredentials();
+    }
+  });
+}
+if (elements.closeApiKeyModalBtn) {
+  elements.closeApiKeyModalBtn.addEventListener('click', () => {
+    elements.apiKeyModal.classList.add('hidden');
+  });
+}
+if (elements.dismissApiKeyModalBtn) {
+  elements.dismissApiKeyModalBtn.addEventListener('click', () => {
+    elements.apiKeyModal.classList.add('hidden');
+  });
+}
+if (elements.genNewKeyBtn) {
+  elements.genNewKeyBtn.addEventListener('click', generateNewApiKey);
+}
+if (elements.toggleApiSecretBtn && elements.displayApiSecret) {
+  elements.toggleApiSecretBtn.addEventListener('click', () => {
+    if (elements.displayApiSecret.type === 'password') {
+      elements.displayApiSecret.type = 'text';
+      elements.toggleApiSecretBtn.textContent = 'HIDE';
+    } else {
+      elements.displayApiSecret.type = 'password';
+      elements.toggleApiSecretBtn.textContent = 'SHOW';
+    }
+  });
+}
+if (elements.copyApiKeyBtn && elements.displayApiKey) {
+  elements.copyApiKeyBtn.addEventListener('click', () => {
+    navigator.clipboard.writeText(elements.displayApiKey.value);
+    elements.copyApiKeyBtn.textContent = 'COPIED!';
+    setTimeout(() => { elements.copyApiKeyBtn.textContent = 'COPY'; }, 1500);
+  });
+}
+if (elements.copyApiSecretBtn && elements.displayApiSecret) {
+  elements.copyApiSecretBtn.addEventListener('click', () => {
+    navigator.clipboard.writeText(elements.displayApiSecret.value);
+    elements.copyApiSecretBtn.textContent = 'COPIED!';
+    setTimeout(() => { elements.copyApiSecretBtn.textContent = 'COPY'; }, 1500);
+  });
+}
+
+function setCodeTab(tab) {
+  currentSnippetTab = tab;
+  if (elements.btnTabPython) elements.btnTabPython.classList.toggle('active', tab === 'python');
+  if (elements.btnTabNode) elements.btnTabNode.classList.toggle('active', tab === 'node');
+  if (elements.btnTabCurl) elements.btnTabCurl.classList.toggle('active', tab === 'curl');
+  renderApiCodeSnippet();
+}
+
+if (elements.btnTabPython) elements.btnTabPython.addEventListener('click', () => setCodeTab('python'));
+if (elements.btnTabNode) elements.btnTabNode.addEventListener('click', () => setCodeTab('node'));
+if (elements.btnTabCurl) elements.btnTabCurl.addEventListener('click', () => setCodeTab('curl'));
 
 // App Startup
 document.addEventListener('DOMContentLoaded', () => {

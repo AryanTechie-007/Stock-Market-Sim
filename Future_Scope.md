@@ -4,7 +4,7 @@
 
 This document outlines the architectural roadmap and deep feature queue for MarketArena as the platform progresses from its current local testing phase toward a public-facing, multi-tenant quantitative trading and market simulation platform.
 
-Features completed in releases (e.g. SQLite persistence, achievements, multi-day rollover, stop-loss, stop-limit, trailing stops, OCO bracket orders, margin trading, short selling, multi-timeframe candles, institutional indicators, quantitative risk analytics, tournament mode, adaptive market regimes, statistical arbitrage bots, and iceberg order execution) are migrated into production documentation upon verification.
+Features completed in releases (e.g. SQLite persistence, achievements, multi-day rollover, stop-loss, stop-limit, trailing stops, OCO bracket orders, margin trading, short selling, multi-timeframe candles, institutional indicators, quantitative risk analytics, tournament mode, adaptive market regimes, statistical arbitrage bots, iceberg order execution, programmatic bot REST APIs, HMAC-SHA256 authentication, token-bucket rate limiting, and Python/JavaScript client SDKs) are migrated into production documentation upon verification.
 
 ---
 
@@ -25,27 +25,7 @@ Features completed in releases (e.g. SQLite persistence, achievements, multi-day
 
 ---
 
-## 2. Programmatic Bot API and Developer SDK
-
-### Public Trading API
-- Provide a standardized RESTful API and WebSocket API allowing external developers to connect custom trading scripts directly to MarketArena.
-- Endpoints:
-  - `POST /api/v1/orders`: Submit limit, market, and stop orders.
-  - `DELETE /api/v1/orders/:id`: Cancel resting orders.
-  - `GET /api/v1/orderbook/:symbol`: Fetch current L2 depth.
-  - `GET /api/v1/candles/:symbol`: Query historical OHLCV data.
-  - `WS /ws/v1/stream`: Real-time streaming for ticker updates, order book changes, personal executions, and account events.
-
-### API Security and Rate Limiting
-- HMAC SHA-256 API key authentication with granular permissions (Read-Only vs. Trading).
-- Token bucket rate limiting per IP and API key to prevent order book spam.
-
-### Python and TypeScript Client SDKs
-- Lightweight Python package (`marketarena-python`) enabling rapid algorithmic prototyping using pandas, numpy, and backtesting frameworks.
-
----
-
-## 3. Frontend Terminal Modernization
+## 2. Frontend Terminal Modernization
 
 ### Responsive Layout
 - Fully responsive mobile and tablet interface with touch-optimized order entry drawers.
@@ -57,7 +37,7 @@ Features completed in releases (e.g. SQLite persistence, achievements, multi-day
 
 ---
 
-## 4. Production Deployment and Security
+## 3. Production Deployment and Security
 
 ### Infrastructure Configuration
 - Docker containerization for matching engine, background workers, and web frontend.
