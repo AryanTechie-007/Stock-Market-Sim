@@ -1,3 +1,5 @@
+import { PerformanceAnalytics } from './analytics.js';
+
 /**
  * Achievements Configuration & Definitions
  */
@@ -540,6 +542,20 @@ export class AccountManager {
       unlocked: user.achievements ? user.achievements.has(a.id) : false
     }));
 
+    // Calculate institutional quantitative risk & performance metrics
+    user.equityCurve = user.equityCurve || [];
+    if (user.equityCurve.length === 0 || Math.abs(user.equityCurve[user.equityCurve.length - 1].equity - totalNetWorth) > 1) {
+      user.equityCurve.push({ time: Date.now(), equity: totalNetWorth });
+      if (user.equityCurve.length > 200) user.equityCurve.shift();
+    }
+
+    const quantitativeMetrics = PerformanceAnalytics.calculateMetrics({
+      tradeHistory: user.tradeHistory || [],
+      equityCurve: user.equityCurve,
+      startingNetWorth: baseCapital,
+      currentNetWorth: totalNetWorth
+    });
+
     return {
       userId: user.id,
       name: user.name,
@@ -564,7 +580,8 @@ export class AccountManager {
       holdings: holdingsList,
       tradeHistory: user.tradeHistory || [],
       achievements: unlockedAchievements,
-      allAchievements
+      allAchievements,
+      quantitativeMetrics
     };
   }
 

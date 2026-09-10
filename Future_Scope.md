@@ -4,7 +4,7 @@
 
 This document outlines the architectural roadmap and deep feature queue for MarketArena as the platform progresses from its current local testing phase toward a public-facing, multi-tenant quantitative trading and market simulation platform.
 
-Features completed in releases (e.g. SQLite persistence, achievements, multi-day rollover, stop-loss, stop-limit, trailing stops, OCO bracket orders, margin trading, and short selling) are migrated into production documentation upon verification.
+Features completed in releases (e.g. SQLite persistence, achievements, multi-day rollover, stop-loss, stop-limit, trailing stops, OCO bracket orders, margin trading, short selling, multi-timeframe candles, institutional indicators, quantitative risk analytics, and tournament mode) are migrated into production documentation upon verification.
 
 ---
 
@@ -59,24 +59,7 @@ Features completed in releases (e.g. SQLite persistence, achievements, multi-day
 
 ---
 
-## 4. Gamification, Progression, and Tournament System
-
-### Scheduled Competitions and Tournament Lobbies
-- Multi-player tournament rooms with fixed duration (e.g., 15-minute blitz sessions, 24-hour marathons).
-- Standardized starting capital with reset ledgers and real-time leaderboard broadcasting.
-
-### Trader Progression and Performance Analytics
-- Calculation of quantitative performance metrics:
-  - Sharpe Ratio
-  - Maximum Drawdown (MDD)
-  - Profit Factor
-  - Win/Loss Ratio
-- Trader Rank Tiers (e.g., Novice Trader, Market Operator, Senior Quant, Market Maker, Floor General).
-- Additional Achievement Tiers: Advanced badges for specialized strategies (e.g., First Arbitrage, 100 Consecutive Winning Trades, Zero-Drawdown Day).
-
----
-
-## 5. Frontend Terminal Modernization
+## 4. Frontend Terminal Modernization
 
 ### Responsive Layout
 - Fully responsive mobile and tablet interface with touch-optimized order entry drawers.
@@ -88,7 +71,7 @@ Features completed in releases (e.g. SQLite persistence, achievements, multi-day
 
 ---
 
-## 6. Production Deployment and Security
+## 5. Production Deployment and Security
 
 ### Infrastructure Configuration
 - Docker containerization for matching engine, background workers, and web frontend.

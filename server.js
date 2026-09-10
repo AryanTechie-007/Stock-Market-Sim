@@ -10,6 +10,7 @@ import { MatchingEngine } from './engine/matching.js';
 import { MarketManager } from './engine/market.js';
 import { NPCManager } from './traders/manager.js';
 import { SQLiteStorageManager } from './engine/sqlite-storage.js';
+import { TournamentManager } from './engine/tournament.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -34,6 +35,21 @@ const symbols = ['AUTO', 'SOLR', 'BYTE', 'NBNK', 'MEDL'];
 const matchingEngine = new MatchingEngine(symbols, accountManager, clock);
 const marketManager = new MarketManager(clock, matchingEngine);
 const npcManager = new NPCManager(matchingEngine, marketManager, accountManager, clock);
+const tournamentManager = new TournamentManager(accountManager, clock, 180, 50000, () => marketManager.getCurrentPrices());
+
+// Wire tournament events
+matchingEngine.on('trade', (trade) => {
+  tournamentManager.recordTournamentTrade(trade);
+});
+tournamentManager.on('tick', (data) => {
+  io.emit('tournament:tick', tournamentManager.getState(marketManager.getCurrentPrices()));
+});
+tournamentManager.on('stateChange', (state) => {
+  io.emit('tournament:state', state);
+});
+tournamentManager.on('tournamentConcluded', (podium) => {
+  io.emit('tournament:concluded', podium);
+});
 
 // Static frontend
 app.use(express.static(path.join(__dirname, 'public')));
@@ -226,7 +242,8 @@ io.on('connection', (socket) => {
       news: marketManager.getNewsFeed(),
       portfolio: accountManager.getPortfolio(userId, marketManager.getCurrentPrices()),
       openOrders: matchingEngine.getUserOpenOrders(userId),
-      leaderboard: accountManager.getLeaderboard(marketManager.getCurrentPrices(), 15)
+      leaderboard: accountManager.getLeaderboard(marketManager.getCurrentPrices(), 15),
+      tournament: tournamentManager.getState(marketManager.getCurrentPrices())
     });
   });
 
@@ -336,6 +353,17 @@ io.on('connection', (socket) => {
     if (callback) {
       callback(candles);
     }
+  });
+
+  socket.on('tournament:join', (data, callback) => {
+    if (!userId) {
+      if (callback) callback({ success: false, error: 'Not registered' });
+      return;
+    }
+    const user = accountManager.getUser(userId);
+    const result = tournamentManager.joinTournament(userId, user ? user.name : 'Trader');
+    io.emit('tournament:state', tournamentManager.getState(marketManager.getCurrentPrices()));
+    if (callback) callback(result);
   });
 
   socket.on('disconnect', () => {

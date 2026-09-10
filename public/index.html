@@ -33,6 +33,12 @@
       <!-- Injected dynamically -->
     </div>
 
+    <div class="tourney-bar" id="tourneyBar">
+      <span class="tourney-tag" id="tourneyTag">BLITZ</span>
+      <span class="tourney-timer" id="tourneyTimer">ROUND IDLE</span>
+      <button class="btn-tourney" id="joinTourneyBtn">JOIN</button>
+    </div>
+
     <div class="topbar-right">
       <button class="icon-toggle" id="audioToggle" title="Toggle sound">MUTE</button>
       <div class="acct" id="userPill">
@@ -135,6 +141,7 @@
         <div class="tab" id="tabBtnMyTrades">My Trades (<span id="myTradesBadge">0</span>)</div>
         <div class="tab" id="tabBtnAchievements">Achievements (<span id="achievementsBadge">0/7</span>)</div>
         <div class="tab" id="tabBtnLeaderboard">Leaderboard</div>
+        <div class="tab" id="tabBtnTournament">Tournament (<span id="tourneyBadgeCount">0</span>)</div>
         <div class="tab" id="tabBtnNews">News log (<span id="newsCountBadge">0</span>)</div>
       </div>
     </div>
@@ -290,6 +297,15 @@
         <div><div class="stat-label">Total P/L</div><div class="stat-val" id="metricTotalPnL">+0.00 CR (0.00%)</div></div>
         <div><div class="stat-label">Realized P/L</div><div class="stat-val" id="metricRealizedPnL">+0.00 CR</div></div>
       </div>
+      <!-- Quantitative Risk Analytics Row (v0.6) -->
+      <div class="stats-row quant-stats-row">
+        <div><div class="stat-label">Sharpe Ratio</div><div class="stat-val quant-val" id="metricSharpe">0.00</div></div>
+        <div><div class="stat-label">Max Drawdown</div><div class="stat-val quant-val" id="metricMaxDrawdown">0.00%</div></div>
+        <div><div class="stat-label">Profit Factor</div><div class="stat-val quant-val" id="metricProfitFactor">0.00</div></div>
+        <div><div class="stat-label">Win Rate</div><div class="stat-val quant-val" id="metricWinRate">0.0%</div></div>
+        <div><div class="stat-label">Wins / Losses</div><div class="stat-val quant-val" id="metricWinLossRatio">0 / 0</div></div>
+        <div><div class="stat-label">Payoff Ratio</div><div class="stat-val quant-val" id="metricPayoffRatio">0.00</div></div>
+      </div>
       <table>
         <thead>
           <tr>
@@ -399,6 +415,56 @@
       </div>
     </div>
 
+    <!-- Tab 7: Tournament Arena View (v0.6) -->
+    <div class="tab-view" id="viewTournament">
+      <div class="tourney-arena-header">
+        <div class="tourney-hero-card">
+          <div class="tourney-hero-info">
+            <div class="tourney-hero-badge" id="tourneyHeroBadge">BLITZ TOURNAMENT</div>
+            <div class="tourney-hero-title" id="tourneyHeroTitle">Speed Trading Arena</div>
+            <div class="tourney-hero-desc">Standardized 50,000 CR starting capital. Compete across live market sessions for podium glory and cash prizes.</div>
+          </div>
+          <div class="tourney-hero-meta">
+            <div class="tourney-meta-box">
+              <span class="meta-label">ROUND STATUS</span>
+              <span class="meta-val" id="tourneyHeroStatus">IDLE</span>
+            </div>
+            <div class="tourney-meta-box">
+              <span class="meta-label">TIME LEFT</span>
+              <span class="meta-val" id="tourneyHeroTimer">--:--</span>
+            </div>
+            <div class="tourney-meta-box">
+              <span class="meta-label">TRADERS</span>
+              <span class="meta-val" id="tourneyHeroParticipants">0</span>
+            </div>
+            <button class="btn-tourney-hero" id="tourneyJoinHeroBtn">ENROLL NOW</button>
+          </div>
+        </div>
+        <div class="tourney-prize-strip">
+          <div class="prize-pill gold"><span>1ST PLACE</span><b>+5,000 CR</b></div>
+          <div class="prize-pill silver"><span>2ND PLACE</span><b>+3,000 CR</b></div>
+          <div class="prize-pill bronze"><span>3RD PLACE</span><b>+1,500 CR</b></div>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Rank</th>
+            <th>Participant</th>
+            <th>Type</th>
+            <th>Bankroll</th>
+            <th>Net worth</th>
+            <th>Round P/L</th>
+            <th>Return</th>
+            <th>Executions</th>
+          </tr>
+        </thead>
+        <tbody id="tourneyTableBody">
+          <tr class="empty-row"><td colspan="8">No tournament round active. Rounds automatically queue every few minutes.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
   </div>
 
   <!-- Toast Notification Hub -->
@@ -450,6 +516,25 @@
           <span class="countdown-val" id="summaryNextDayCountdown">00:25</span>
         </div>
         <button class="place-btn" id="dismissDaySummaryBtn" style="margin-top:14px;">PROCEED TO NEXT SESSION</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tournament Podium Modal Dialog (v0.6) -->
+  <div class="modal-overlay hidden" id="tourneyPodiumModal">
+    <div class="modal-box tourney-podium-box">
+      <div class="modal-head">
+        <div class="modal-head-title-wrap">
+          <span class="badge-day">ROUND CONCLUDED</span>
+          <span class="modal-title">TOURNAMENT PODIUM & PRIZES</span>
+        </div>
+        <button class="modal-close-btn" id="closeTourneyPodiumBtn">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="podium-grid" id="podiumCardsContainer">
+          <!-- Dynamically populated 1st, 2nd, 3rd place cards -->
+        </div>
+        <button class="place-btn" id="dismissTourneyPodiumBtn" style="margin-top:14px;">CONTINUE TRADING</button>
       </div>
     </div>
   </div>

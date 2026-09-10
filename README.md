@@ -2,17 +2,17 @@
 
 ## Repository Metadata
 
-- **Current Pushed Version:** v0.5
+- **Current Pushed Version:** v0.6
 - **Username:** AryanTechie-007
-- **Push Timestamp:** 2026-09-10 22:30:00 IST (UTC+05:30)
-- **Current Status:** Deployed Build (Technical Analysis & Multi-Timeframe Charting Release)
+- **Push Timestamp:** 2026-09-10 23:25:00 IST (UTC+05:30)
+- **Current Status:** Deployed Build (Quantitative Risk Analytics & Tournament Mode Release)
 - **Repository:** https://github.com/AryanTechie-007/Stock-Market-Sim
 
 ---
 
 ## Overview
 
-MarketArena is a high-performance, gamified financial market simulator and quantitative trading terminal built with Node.js, Express, Socket.IO, and a vanilla JavaScript frontend terminal. The platform provides a realistic, continuous double-auction equity exchange featuring FIFO price-time order matching, conditional stop and bracket orders, margin leverage, short selling, an automated liquidation engine, multi-asset portfolio accounting, multi-timeframe candlestick generation, institutional-grade technical analysis indicators, simulated market clock cycles, eight autonomous algorithmic NPC traders, an achievements milestone engine, end-of-day settlement summaries, and native relational state persistence.
+MarketArena is a high-performance, gamified financial market simulator and quantitative trading terminal built with Node.js, Express, Socket.IO, and a vanilla JavaScript frontend terminal. The platform provides a realistic, continuous double-auction equity exchange featuring FIFO price-time order matching, conditional stop and bracket orders, margin leverage, short selling, an automated liquidation engine, multi-asset portfolio accounting, quantitative risk metrics (Sharpe ratio, maximum drawdown, profit factor, win rate), competitive multi-player speed tournaments, multi-timeframe candlestick generation, institutional-grade technical analysis indicators, simulated market clock cycles, eight autonomous algorithmic NPC traders, an achievements milestone engine, end-of-day settlement summaries, and native relational state persistence.
 
 ---
 
@@ -77,7 +77,23 @@ Zero-dependency mathematical library computing real-time technical indicators ov
 - **Relative Strength Index (RSI 14):** Wilder's smoothed momentum oscillator plotted in a dedicated lower panel with 70 overbought and 30 oversold dashed reference lines.
 - **Moving Average Convergence Divergence (MACD 12, 26, 9):** Fast 12 EMA minus slow 26 EMA (MACD line), 9-period signal line, and color-coded momentum histogram bars.
 
-### 4. Account and Portfolio Management (`engine/accounts.js`)
+### 4. Quantitative Risk Analytics Engine (`engine/analytics.js`)
+Real-time mathematical performance analytics evaluated continuously on user equity curves and closed trade histories:
+- **Sharpe Ratio:** Evaluates risk-adjusted excess returns over a baseline annual risk-free rate of 2.0%, measuring return generated per unit of total portfolio volatility.
+- **Maximum Drawdown (MDD % & Value):** Quantifies worst-case peak-to-trough capital loss percentage across historical equity curves.
+- **Profit Factor:** Ratio of gross winning profits to gross losing trades. Values greater than 1.5 represent robust edge.
+- **Win Rate & Payoff Ratio:** Percentage of profitable closed positions paired with average winning trade divided by average losing trade.
+- **Continuous Recalculation:** Computed on every portfolio state transition and broadcasted across WebSocket connections.
+
+### 5. Competitive Blitz Tournament Coordinator (`engine/tournament.js`)
+Standardized multiplayer tournament arena supporting high-speed round competitions:
+- **Standardized Bankrolls:** Enrolled participants receive an isolated 50,000.00 CR competition bankroll with equal starting terms.
+- **Automated Round Lifecycle:** State transitions through IDLE, COUNTDOWN (10s), ACTIVE (180s live trading), and CONCLUDED.
+- **Isolated Trade Ledger:** Automatically tracks fills, realized P&L, and open inventory across tournament participants without affecting primary capital.
+- **Live Mark-to-Market Ranking:** Dynamically values participant portfolios against live market prices and streams ranked standings.
+- **Podium Prize Distribution:** Rewards top 3 finishers (1st Place: +5,000 CR, 2nd Place: +3,000 CR, 3rd Place: +1,500 CR) with instant balance deposits credited to primary accounts.
+
+### 6. Account and Portfolio Management (`engine/accounts.js`)
 - **Initial Capital:** Default allocation of 100,000.00 Credits (CR) per human user.
 - **Double-Entry Settlement:**
   - Executes instant cash, equity, and margin loan settlement upon trade matching.
@@ -96,7 +112,7 @@ Zero-dependency mathematical library computing real-time technical indicators ov
 - **Daily Performance Snapshot:** Tracks starting net worth per day, day P&L, day volume, and daily trade counts for end-of-day settlement.
 - **Leaderboard Calculation:** Ranks all human and NPC participants by total net worth and total return.
 
-### 5. Relational Persistence (`engine/sqlite-storage.js`)
+### 7. Relational Persistence (`engine/sqlite-storage.js`)
 - **Database Engine:** Node.js native `node:sqlite` (`DatabaseSync`).
 - **Relational Tables:**
   - `accounts`: User identification, starting capital, current credits, locked credits, margin loans, leverage settings, realized P&L, trades count, volume.
@@ -105,7 +121,7 @@ Zero-dependency mathematical library computing real-time technical indicators ov
   - `achievements`: Foreign-key bound records of unlocked badges and milestone timestamps.
 - **Bootstrap Restoration:** Automatically reconstructs all active human trader portfolios, holdings, margin balances, transaction histories, and unlocked achievements upon server start.
 
-### 6. Market Clock and Phased Trading (`engine/clock.js`)
+### 8. Market Clock and Phased Trading (`engine/clock.js`)
 - **Day and Session State Machine:**
   - **PRE_MARKET (20s):** Orders can be queued; matching is halted.
   - **REGULAR_HOURS (180s / 3 min):** Active trading session with live continuous order execution. Simulated clock runs from 09:30 AM to 04:00 PM.
@@ -113,7 +129,7 @@ Zero-dependency mathematical library computing real-time technical indicators ov
 - **Session Transitions:** Emits opening bell, closing bell, and day recap events across the WebSocket network.
 - **Day Rollover:** Resets intraday accumulators, snapshots new opening net worth, and transitions cleanly into the next trading day.
 
-### 7. Algorithmic NPC Traders (`traders/`)
+### 9. Algorithmic NPC Traders (`traders/`)
 Eight autonomous trading bots interact with the matching engine to provide realistic market depth and price discovery:
 - **Market Makers (MM Alpha Securities, Apex Liquidity LP):** Continuous two-sided limit orders with dynamic volatility spread expansion.
 - **Momentum Traders (Velocity Quant Bot, TrendRider Algorithmic):** Dual SMA momentum breakouts and breaking news catalyst executions.
@@ -125,7 +141,7 @@ Eight autonomous trading bots interact with the matching engine to provide reali
 ## User Interface and Trading Terminal (`public/`)
 
 The web client provides a professional desktop terminal layout:
-- **Top Bar:** Market clock phase display, simulated time, session countdown timer, global ticker tape, audio mute toggle, callsign manager.
+- **Top Bar:** Market clock phase display, simulated time, session countdown timer, global ticker tape, Blitz tournament status bar and countdown timer, audio mute toggle, callsign manager.
 - **Watchlist and Fundamentals:** Multi-asset ticker list with real-time percentage changes, company descriptions, P/E ratios, market caps, and sentiment indicators.
 - **Interactive Candlestick & Volume Chart with Technical Suite:**
   - HTML5 Canvas chart displaying real-time OHLC candlestick bodies and wicks.
@@ -146,12 +162,15 @@ The web client provides a professional desktop terminal layout:
 - **Order Book Ladder:** Depth visualization displaying aggregate bid and ask volumes, cumulative depth bars, and bid-ask spread indicators.
 - **Bottom Drawer Tabbed Views:**
   - **Portfolio:** Net worth, cash, locked funds, margin loan, margin health level, realized and unrealized P&L, holdings table with average cost, position values, and Long/Short badges.
+  - **Quantitative Risk Analytics Row:** Dedicated institutional risk bar displaying Sharpe Ratio, Maximum Drawdown (MDD %), Profit Factor, Win Rate %, Wins / Losses ratio, and Payoff Ratio.
+  - **Tournament Arena:** Competitive speed trading arena featuring live round timer, status indicator, standardized 50k CR bankrolls, prize pool schedule, and real-time mark-to-market competitor rankings.
   - **Open Orders:** Active resting limit, stop, trailing stop, and OCO bracket orders with trigger thresholds and immediate cancellation buttons.
   - **My Trades:** Personal transaction ledger with execution timestamps, symbols, Buy/Sell indicators, Maker/Taker badges, and realized P&L.
   - **Achievements:** Trophy room displaying all 7 trading badges, completion status, criteria descriptions, and reward values.
   - **Leaderboard:** Live rankings of all active human and bot participants.
   - **News Log:** Historical archive of economic news and market catalysts.
 - **End-of-Day Summary Modal:** Daily session recap dialog displaying intraday P&L, ending net worth, total volume, execution counts, top market gainer, and countdown to next session opening bell.
+- **Tournament Podium Modal:** Concluded round celebration card presenting gold, silver, and bronze podium finishers with net returns and cash prize allocations.
 - **Audio Feedback:** Synthesized Web Audio tones for order fills, session opening and closing bells, breaking economic news alerts, stop order triggers, and milestone unlocks.
 
 ---
@@ -214,11 +233,22 @@ To execute the technical indicators mathematical verification suite:
 node tests/indicators.test.js
 ```
 
+To execute the quantitative risk analytics performance test suite:
+```bash
+node tests/analytics.test.js
+```
+
+To execute the competitive tournament coordinator test suite:
+```bash
+node tests/tournament.test.js
+```
+
 To execute the live WebSocket integration tests:
 ```bash
 node tests/tier2_e2e_simulation.js
 node tests/v04_e2e_simulation.js
 node tests/v05_e2e_simulation.js
+node tests/v06_e2e_simulation.js
 ```
 
 ### Verified Test Cases:
@@ -244,6 +274,11 @@ node tests/v05_e2e_simulation.js
 20. Indicator math: Volume Weighted Average Price (VWAP) volume-weighted accumulation.
 21. Indicator math: Relative Strength Index (RSI 14) boundary conditions and Wilder smoothing.
 22. Indicator math: Moving Average Convergence Divergence (MACD 12/26/9) lines and histogram.
+23. Quantitative analytics: Win rate, gross profit/loss, and profit factor calculation.
+24. Quantitative analytics: Maximum drawdown (MDD) peak-to-trough equity drop.
+25. Quantitative analytics: Sharpe ratio risk-adjusted return calculation.
+26. Tournament coordinator: Bankroll initialization, isolated round ledger, and trade settlement.
+27. Tournament coordinator: Mark-to-market leaderboard, podium ranking, and prize bonus awards.
 
 ---
 
@@ -253,4 +288,5 @@ node tests/v05_e2e_simulation.js
 - **v0.2 (Pushed to GitHub):** Native SQLite relational persistence, personal trade history ledger and terminal tab, advanced candlestick and volume charting with crosshair inspection, and harmonic audio feedback.
 - **v0.3 (Pushed to GitHub):** Advanced order types (Stop Loss & Stop Limit), 7 gamified achievements with credit rewards and HUD toasts, multi-day progression with End-of-Day recap modal, smarter NPC behavior (volatility spreads, news catalysts, SMA momentum), and full 10-test automated suite.
 - **v0.4 (Pushed to GitHub):** Advanced execution mechanics: Trailing Stop orders with dynamic peak/trough ratcheting, OCO (One-Cancels-the-Other) bracket orders with mutual counterpart cancellation, Margin Trading with up to 5x leverage, Short Selling with borrow collateral mechanics, automated maintenance margin monitoring and forced liquidation engine, SQLite schema migrations for margin loans and short positions.
-- **v0.5 (Current Release):** Technical Analysis & Multi-Timeframe Charting Suite: Multi-timeframe candlestick engine (1s, 5s, 15s, 1m, 5m), overlay indicators (SMA 20/50, EMA 9/21, Bollinger Bands with shaded channel, session VWAP), lower Oscillator sub-panel (RSI 14 with 70/30 thresholds, MACD with signal line and colored histogram), expanded interactive HUD crosshair, and mathematical indicator test suite.
+- **v0.5 (Pushed to GitHub):** Technical Analysis & Multi-Timeframe Charting Suite: Multi-timeframe candlestick engine (1s, 5s, 15s, 1m, 5m), overlay indicators (SMA 20/50, EMA 9/21, Bollinger Bands with shaded channel, session VWAP), lower Oscillator sub-panel (RSI 14 with 70/30 thresholds, MACD with signal line and colored histogram), expanded interactive HUD crosshair, and mathematical indicator test suite.
+- **v0.6 (Current Release):** Quantitative Risk Analytics & Competitive Tournament Mode: Zero-dependency quantitative performance engine (Sharpe Ratio, Maximum Drawdown %, Profit Factor, Win Rate %, Win/Loss Ratio, Payoff Ratio) integrated into portfolio tracking and WebSockets; Competitive Blitz Tournament Coordinator featuring standardized 50,000 CR bankrolls, automated round lifecycle transitions (Countdown, Active, Concluded), mark-to-market live rankings, isolated trade accounting, top-3 podium cash awards (1st +5,000 CR, 2nd +3,000 CR, 3rd +1,500 CR) deposited to primary accounts, dedicated Tournament Arena tab, and celebratory podium modal.

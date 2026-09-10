@@ -1443,3 +1443,294 @@ tbody tr:hover td {
   background: rgba(184, 147, 90, 0.15);
   color: var(--amber);
 }
+
+/* ----------------------------------------------------
+   v0.6: QUANTITATIVE RISK ANALYTICS ROW
+   ---------------------------------------------------- */
+.quant-stats-row {
+  background: #0d1117 !important;
+  border-bottom: 1px solid var(--line-soft) !important;
+  padding: 8px 16px !important;
+}
+
+.quant-stats-row .stat-label {
+  color: #7d8590;
+  font-size: 9px;
+  letter-spacing: 0.4px;
+}
+
+.quant-val {
+  font-size: 13px !important;
+  color: #58a6ff;
+  font-family: var(--mono);
+}
+
+/* ----------------------------------------------------
+   v0.6: TOPBAR TOURNAMENT STATUS BAR
+   ---------------------------------------------------- */
+.tourney-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 10px;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.28);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.tourney-tag {
+  background: #f59e0b;
+  color: #0b0d10;
+  font-weight: 700;
+  font-size: 9px;
+  padding: 2px 5px;
+  letter-spacing: 0.5px;
+}
+
+.tourney-timer {
+  color: #fbbf24;
+  font-weight: 600;
+  font-size: 11px;
+}
+
+.btn-tourney {
+  background: #f59e0b;
+  color: #000;
+  border: none;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 9px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-tourney:hover {
+  background: #fbbf24;
+}
+
+.btn-tourney.joined {
+  background: rgba(34, 197, 94, 0.2);
+  border: 1px solid #22c55e;
+  color: #4ade80;
+  cursor: default;
+}
+
+/* ----------------------------------------------------
+   v0.6: TOURNAMENT ARENA TAB VIEW
+   ---------------------------------------------------- */
+.tourney-arena-header {
+  padding: 16px 20px;
+  background: var(--panel-alt);
+  border-bottom: 1px solid var(--line);
+}
+
+.tourney-hero-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #0f141c;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  padding: 16px 20px;
+  margin-bottom: 14px;
+}
+
+.tourney-hero-info {
+  max-width: 58%;
+}
+
+.tourney-hero-badge {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  background: rgba(245, 158, 11, 0.1);
+  padding: 2px 7px;
+  margin-bottom: 6px;
+}
+
+.tourney-hero-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  font-family: var(--mono);
+  margin-bottom: 4px;
+}
+
+.tourney-hero-desc {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.45;
+}
+
+.tourney-hero-meta {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.tourney-meta-box {
+  text-align: right;
+}
+
+.tourney-meta-box .meta-label {
+  display: block;
+  font-size: 9px;
+  font-family: var(--mono);
+  color: var(--text-faint);
+  letter-spacing: 0.4px;
+}
+
+.tourney-meta-box .meta-val {
+  font-size: 14px;
+  font-weight: 700;
+  font-family: var(--mono);
+  color: #f59e0b;
+}
+
+.btn-tourney-hero {
+  background: #f59e0b;
+  color: #0b0d10;
+  border: none;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 8px 16px;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  transition: all 0.15s ease;
+}
+
+.btn-tourney-hero:hover {
+  background: #fbbf24;
+}
+
+.btn-tourney-hero.joined {
+  background: #142a1e;
+  border: 1px solid #22c55e;
+  color: #4ade80;
+  cursor: default;
+}
+
+.tourney-prize-strip {
+  display: flex;
+  gap: 12px;
+}
+
+.prize-pill {
+  flex: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  font-family: var(--mono);
+  font-size: 11px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+}
+
+.prize-pill.gold {
+  border-color: rgba(245, 158, 11, 0.4);
+  background: rgba(245, 158, 11, 0.05);
+  color: #fbbf24;
+}
+
+.prize-pill.silver {
+  border-color: rgba(148, 163, 184, 0.4);
+  background: rgba(148, 163, 184, 0.05);
+  color: #cbd5e1;
+}
+
+.prize-pill.bronze {
+  border-color: rgba(217, 119, 6, 0.4);
+  background: rgba(217, 119, 6, 0.05);
+  color: #d97706;
+}
+
+.prize-pill span {
+  font-size: 9.5px;
+  color: var(--text-dim);
+}
+
+/* ----------------------------------------------------
+   v0.6: TOURNAMENT PODIUM MODAL
+   ---------------------------------------------------- */
+.tourney-podium-box {
+  width: 540px !important;
+}
+
+.podium-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.podium-card {
+  background: var(--panel-alt);
+  border: 1px solid var(--line);
+  padding: 16px 12px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.podium-card.rank-1 {
+  border-color: rgba(245, 158, 11, 0.6);
+  background: rgba(245, 158, 11, 0.08);
+  order: 2; /* Centered visually in podium */
+  transform: translateY(-8px);
+}
+
+.podium-card.rank-2 {
+  border-color: rgba(148, 163, 184, 0.5);
+  background: rgba(148, 163, 184, 0.06);
+  order: 1;
+}
+
+.podium-card.rank-3 {
+  border-color: rgba(217, 119, 6, 0.5);
+  background: rgba(217, 119, 6, 0.06);
+  order: 3;
+}
+
+.podium-rank-badge {
+  font-size: 10px;
+  font-family: var(--mono);
+  font-weight: 700;
+  padding: 2px 8px;
+  margin-bottom: 8px;
+}
+
+.podium-card.rank-1 .podium-rank-badge { background: #f59e0b; color: #000; }
+.podium-card.rank-2 .podium-rank-badge { background: #94a3b8; color: #000; }
+.podium-card.rank-3 .podium-rank-badge { background: #d97706; color: #000; }
+
+.podium-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.podium-return {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.podium-prize {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: #4ade80;
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  padding: 3px 8px;
+}
+

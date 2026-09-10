@@ -34,7 +34,9 @@ const state = {
     vwap: false,
     rsi: false,
     macd: false
-  }
+  },
+  tournament: null,
+  joinedTourney: false
 };
 
 // Subtle Web Audio Synthesizer
@@ -316,7 +318,33 @@ const elements = {
   // Nickname Modal
   nicknameModal: document.getElementById('nicknameModal'),
   nicknameForm: document.getElementById('nicknameForm'),
-  nicknameInput: document.getElementById('nicknameInput')
+  nicknameInput: document.getElementById('nicknameInput'),
+  // Tournament Elements (v0.6)
+  tourneyBar: document.getElementById('tourneyBar'),
+  tourneyTag: document.getElementById('tourneyTag'),
+  tourneyTimer: document.getElementById('tourneyTimer'),
+  joinTourneyBtn: document.getElementById('joinTourneyBtn'),
+  tabBtnTournament: document.getElementById('tabBtnTournament'),
+  tourneyBadgeCount: document.getElementById('tourneyBadgeCount'),
+  viewTournament: document.getElementById('viewTournament'),
+  tourneyHeroBadge: document.getElementById('tourneyHeroBadge'),
+  tourneyHeroTitle: document.getElementById('tourneyHeroTitle'),
+  tourneyHeroStatus: document.getElementById('tourneyHeroStatus'),
+  tourneyHeroTimer: document.getElementById('tourneyHeroTimer'),
+  tourneyHeroParticipants: document.getElementById('tourneyHeroParticipants'),
+  tourneyJoinHeroBtn: document.getElementById('tourneyJoinHeroBtn'),
+  tourneyTableBody: document.getElementById('tourneyTableBody'),
+  tourneyPodiumModal: document.getElementById('tourneyPodiumModal'),
+  closeTourneyPodiumBtn: document.getElementById('closeTourneyPodiumBtn'),
+  dismissTourneyPodiumBtn: document.getElementById('dismissTourneyPodiumBtn'),
+  podiumCardsContainer: document.getElementById('podiumCardsContainer'),
+  // Quantitative Risk Analytics Elements (v0.6)
+  metricSharpe: document.getElementById('metricSharpe'),
+  metricMaxDrawdown: document.getElementById('metricMaxDrawdown'),
+  metricProfitFactor: document.getElementById('metricProfitFactor'),
+  metricWinRate: document.getElementById('metricWinRate'),
+  metricWinLossRatio: document.getElementById('metricWinLossRatio'),
+  metricPayoffRatio: document.getElementById('metricPayoffRatio')
 };
 
 // Formatting Utilities
@@ -1066,6 +1094,36 @@ function renderPortfolio(portfolio) {
   elements.metricRealizedPnL.textContent = `${rSign}${formatCurrency(portfolio.realizedPnL)}`;
   elements.metricRealizedPnL.className = `stat-val ${rCls}`;
 
+  // Quantitative Risk Analytics (v0.6)
+  if (portfolio.quantitativeMetrics) {
+    const q = portfolio.quantitativeMetrics;
+    if (elements.metricSharpe) {
+      elements.metricSharpe.textContent = q.sharpeRatio.toFixed(2);
+      elements.metricSharpe.className = `stat-val quant-val ${q.sharpeRatio >= 1 ? 'up' : q.sharpeRatio < 0 ? 'down' : ''}`;
+    }
+    if (elements.metricMaxDrawdown) {
+      const mdd = q.maxDrawdownPercent !== undefined ? q.maxDrawdownPercent : (q.maxDrawdown || 0);
+      elements.metricMaxDrawdown.textContent = `${mdd.toFixed(2)}%`;
+      elements.metricMaxDrawdown.className = `stat-val quant-val ${mdd > 15 ? 'down' : ''}`;
+    }
+    if (elements.metricProfitFactor) {
+      elements.metricProfitFactor.textContent = isFinite(q.profitFactor) ? q.profitFactor.toFixed(2) : '—';
+      elements.metricProfitFactor.className = `stat-val quant-val ${q.profitFactor >= 1.5 ? 'up' : q.profitFactor < 1 ? 'down' : ''}`;
+    }
+    if (elements.metricWinRate) {
+      elements.metricWinRate.textContent = `${q.winRate.toFixed(1)}%`;
+      elements.metricWinRate.className = `stat-val quant-val ${q.winRate >= 50 ? 'up' : 'down'}`;
+    }
+    if (elements.metricWinLossRatio) {
+      const wins = q.winCount !== undefined ? q.winCount : (q.winningTrades || 0);
+      const losses = q.lossCount !== undefined ? q.lossCount : (q.losingTrades || 0);
+      elements.metricWinLossRatio.textContent = `${wins} / ${losses}`;
+    }
+    if (elements.metricPayoffRatio) {
+      elements.metricPayoffRatio.textContent = isFinite(q.payoffRatio) ? q.payoffRatio.toFixed(2) : '—';
+    }
+  }
+
   // Holdings Table
   elements.holdingsTableBody.innerHTML = '';
   if (!portfolio.holdings || portfolio.holdings.length === 0) {
@@ -1668,6 +1726,7 @@ const tabMapping = [
   { btn: elements.tabBtnMyTrades, view: elements.viewMyTrades },
   { btn: elements.tabBtnAchievements, view: elements.viewAchievements },
   { btn: elements.tabBtnLeaderboard, view: elements.viewLeaderboard },
+  { btn: elements.tabBtnTournament, view: elements.viewTournament },
   { btn: elements.tabBtnNews, view: elements.viewNews }
 ];
 
@@ -1826,6 +1885,9 @@ socket.on('init:state', (data) => {
   renderPortfolio(data.portfolio);
   renderOpenOrders(data.openOrders);
   renderLeaderboard(data.leaderboard);
+  if (data.tournament) {
+    renderTournamentState(data.tournament);
+  }
 });
 
 socket.on('clock:tick', (clk) => {
@@ -1964,6 +2026,163 @@ socket.on('order:ocoCancelled', ({ symbol, ocoGroupId, cancelledOrderId }) => {
     side: 'CANCEL',
     price: 0
   });
+});
+
+// Tournament Arena Logic (v0.6)
+function renderTournamentState(tourney) {
+  if (!tourney) return;
+  state.tournament = tourney;
+
+  const isJoined = tourney.leaderboard && tourney.leaderboard.some(p => p.userId === state.user.id);
+  state.joinedTourney = isJoined;
+
+  if (elements.tourneyBadgeCount) {
+    elements.tourneyBadgeCount.textContent = tourney.participantsCount || 0;
+  }
+  if (elements.tourneyHeroParticipants) {
+    elements.tourneyHeroParticipants.textContent = tourney.participantsCount || 0;
+  }
+  if (elements.tourneyHeroStatus) {
+    elements.tourneyHeroStatus.textContent = tourney.status;
+  }
+
+  // Topbar Timer & Hero Timer
+  let timerText = 'IDLE';
+  if (tourney.status === 'COUNTDOWN') {
+    timerText = `START IN ${tourney.countdownRemaining || 0}s`;
+  } else if (tourney.status === 'ACTIVE') {
+    const m = Math.floor((tourney.roundRemainingSec || 0) / 60);
+    const s = (tourney.roundRemainingSec || 0) % 60;
+    timerText = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  } else if (tourney.status === 'CONCLUDED') {
+    timerText = 'CONCLUDED';
+  }
+
+  if (elements.tourneyTimer) {
+    elements.tourneyTimer.textContent = timerText;
+  }
+  if (elements.tourneyHeroTimer) {
+    elements.tourneyHeroTimer.textContent = timerText;
+  }
+
+  // Join buttons state
+  const joinBtns = [elements.joinTourneyBtn, elements.tourneyJoinHeroBtn];
+  joinBtns.forEach(btn => {
+    if (!btn) return;
+    if (isJoined) {
+      btn.textContent = 'ENROLLED';
+      btn.classList.add('joined');
+      btn.disabled = true;
+    } else {
+      btn.textContent = tourney.status === 'ACTIVE' ? 'JOIN ROUND' : 'ENROLL';
+      btn.classList.remove('joined');
+      btn.disabled = false;
+    }
+  });
+
+  // Render Table
+  if (elements.tourneyTableBody) {
+    elements.tourneyTableBody.innerHTML = '';
+    if (!tourney.leaderboard || tourney.leaderboard.length === 0) {
+      elements.tourneyTableBody.innerHTML = `<tr class="empty-row"><td colspan="8">No participants enrolled yet. Click ENROLL to enter!</td></tr>`;
+    } else {
+      tourney.leaderboard.forEach((p, idx) => {
+        const isMe = p.userId === state.user.id;
+        const isProfit = p.netReturn >= 0;
+        const sign = isProfit ? '+' : '';
+        const pnlCls = isProfit ? 'up' : 'down';
+
+        const row = document.createElement('tr');
+        if (isMe) row.style.backgroundColor = '#171b20';
+
+        row.innerHTML = `
+          <td>#${idx + 1}</td>
+          <td><b>${p.name}</b> ${isMe ? '<span style="color:var(--amber);font-size:9px">(You)</span>' : ''}</td>
+          <td><span class="badge-tag">Trader</span></td>
+          <td>${formatCurrency(tourney.standardBankroll)}</td>
+          <td>${formatCurrency(p.totalNetWorth)}</td>
+          <td class="${pnlCls}">${sign}${formatCurrency(p.netReturn)}</td>
+          <td class="${pnlCls}">${sign}${p.returnPercent.toFixed(2)}%</td>
+          <td>${p.tradesCount}</td>
+        `;
+        elements.tourneyTableBody.appendChild(row);
+      });
+    }
+  }
+}
+
+function joinTournament() {
+  socket.emit('tournament:join', {}, (res) => {
+    if (res && res.success) {
+      state.joinedTourney = true;
+      if (elements.joinTourneyBtn) {
+        elements.joinTourneyBtn.textContent = 'ENROLLED';
+        elements.joinTourneyBtn.classList.add('joined');
+      }
+      if (elements.tourneyJoinHeroBtn) {
+        elements.tourneyJoinHeroBtn.textContent = 'ENROLLED';
+        elements.tourneyJoinHeroBtn.classList.add('joined');
+      }
+    }
+  });
+}
+
+function handleTournamentConcluded(lastPodium) {
+  if (!lastPodium || !lastPodium.podium) return;
+  renderTournamentState(state.tournament);
+
+  if (elements.podiumCardsContainer) {
+    elements.podiumCardsContainer.innerHTML = '';
+    lastPodium.podium.forEach(p => {
+      const isProfit = p.netReturn >= 0;
+      const sign = isProfit ? '+' : '';
+      const pnlCls = isProfit ? 'up' : 'down';
+      const card = document.createElement('div');
+      card.className = `podium-card rank-${p.rank}`;
+      card.innerHTML = `
+        <div class="podium-rank-badge">RANK #${p.rank}</div>
+        <div class="podium-name">${p.name}</div>
+        <div class="podium-return ${pnlCls}">${sign}${p.returnPercent.toFixed(2)}%</div>
+        <div class="podium-prize">+${formatCurrency(p.prizeCredits)} PRIZE</div>
+      `;
+      elements.podiumCardsContainer.appendChild(card);
+    });
+  }
+
+  if (elements.tourneyPodiumModal) {
+    elements.tourneyPodiumModal.classList.remove('hidden');
+  }
+}
+
+// Tournament UI Event Bindings
+if (elements.joinTourneyBtn) {
+  elements.joinTourneyBtn.addEventListener('click', joinTournament);
+}
+if (elements.tourneyJoinHeroBtn) {
+  elements.tourneyJoinHeroBtn.addEventListener('click', joinTournament);
+}
+if (elements.closeTourneyPodiumBtn) {
+  elements.closeTourneyPodiumBtn.addEventListener('click', () => {
+    elements.tourneyPodiumModal.classList.add('hidden');
+  });
+}
+if (elements.dismissTourneyPodiumBtn) {
+  elements.dismissTourneyPodiumBtn.addEventListener('click', () => {
+    elements.tourneyPodiumModal.classList.add('hidden');
+  });
+}
+
+// Tournament Socket Listeners
+socket.on('tournament:state', (tourney) => {
+  renderTournamentState(tourney);
+});
+
+socket.on('tournament:tick', (tourney) => {
+  renderTournamentState(tourney);
+});
+
+socket.on('tournament:concluded', (podiumData) => {
+  handleTournamentConcluded(podiumData);
 });
 
 // App Startup
