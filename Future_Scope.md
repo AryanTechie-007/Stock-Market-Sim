@@ -4,6 +4,8 @@
 
 This document outlines the architectural roadmap and deep feature queue for MarketArena as the platform progresses from its current local testing phase toward a public-facing, multi-tenant quantitative trading and market simulation platform.
 
+Features completed in releases (e.g. SQLite persistence, achievements, multi-day rollover, stop-loss, stop-limit, trailing stops, OCO bracket orders, margin trading, and short selling) are migrated into production documentation upon verification.
+
 ---
 
 ## 1. Database and Persistence Infrastructure
@@ -23,22 +25,7 @@ This document outlines the architectural roadmap and deep feature queue for Mark
 
 ---
 
-## 2. Advanced Order Types and Execution Mechanics
-
-### Conditional Orders
-- **Stop-Loss Orders:** Market order triggered automatically when the mark price reaches or falls below a designated stop trigger price.
-- **Stop-Limit Orders:** Limit order injected into the order book once a designated stop trigger price is breached.
-- **Trailing Stops:** Dynamic stop-loss that automatically adjusts as the market price moves favorably, locking in profits.
-- **OCO (One-Cancels-the-Other):** Paired bracket orders combining a take-profit limit order and a stop-loss order.
-
-### Margin Trading and Short Selling
-- **Securities Lending:** Mechanism enabling traders to borrow shares against cash collateral to execute short sales.
-- **Maintenance Margin & Leverage:** Configurable leverage ratios (e.g., 2x, 5x) with real-time maintenance margin monitoring.
-- **Automated Liquidation Engine:** Forced liquidation when a participant's margin equity falls below the maintenance threshold to protect system solvency.
-
----
-
-## 3. Algorithmic NPC Intelligence and Market Microstructure
+## 2. Algorithmic NPC Intelligence and Market Microstructure
 
 ### Adaptive Market Regime Engine
 - Introduce dynamic volatility regimes (e.g., Low Volatility Consolidation, Earnings Breakout, High-Volatility Liquidity Drought, Flash Crash).
@@ -52,7 +39,7 @@ This document outlines the architectural roadmap and deep feature queue for Mark
 
 ---
 
-## 4. Programmatic Bot API and Developer SDK
+## 3. Programmatic Bot API and Developer SDK
 
 ### Public Trading API
 - Provide a standardized RESTful API and WebSocket API allowing external developers to connect custom trading scripts directly to MarketArena.
@@ -72,7 +59,7 @@ This document outlines the architectural roadmap and deep feature queue for Mark
 
 ---
 
-## 5. Gamification, Progression, and Tournament System
+## 4. Gamification, Progression, and Tournament System
 
 ### Scheduled Competitions and Tournament Lobbies
 - Multi-player tournament rooms with fixed duration (e.g., 15-minute blitz sessions, 24-hour marathons).
@@ -85,11 +72,11 @@ This document outlines the architectural roadmap and deep feature queue for Mark
   - Profit Factor
   - Win/Loss Ratio
 - Trader Rank Tiers (e.g., Novice Trader, Market Operator, Senior Quant, Market Maker, Floor General).
-- Achievement System: Milestone badges for trading achievements (e.g., First Arbitrage, 100 Consecutive Winning Trades, Zero-Drawdown Day).
+- Additional Achievement Tiers: Advanced badges for specialized strategies (e.g., First Arbitrage, 100 Consecutive Winning Trades, Zero-Drawdown Day).
 
 ---
 
-## 6. Frontend Terminal Modernization
+## 5. Frontend Terminal Modernization
 
 ### Responsive Layout
 - Fully responsive mobile and tablet interface with touch-optimized order entry drawers.
@@ -109,7 +96,7 @@ This document outlines the architectural roadmap and deep feature queue for Mark
 
 ---
 
-## 7. Production Deployment and Security
+## 6. Production Deployment and Security
 
 ### Infrastructure Configuration
 - Docker containerization for matching engine, background workers, and web frontend.

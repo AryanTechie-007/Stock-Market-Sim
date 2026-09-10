@@ -55,11 +55,11 @@ export class MatchingEngine extends EventEmitter {
    * @returns {{ success: boolean, order?: Object, trades?: Array, error?: string, isStop?: boolean }}
    */
   submitOrder(rawOrder) {
-    const { userId, userName, symbol, side, type, price, quantity, stopPrice } = rawOrder;
+    const { userId, userName, symbol, side, type, price, quantity, stopPrice, trailingDelta, leverage, isShort, ocoGroupId } = rawOrder;
 
     if (!this.clock.isTradingOpen()) {
       // In Pre-market, allow limit orders and resting stop orders
-      if (this.clock.phase !== 'PRE_MARKET' || (type !== 'LIMIT' && type !== 'STOP_LOSS' && type !== 'STOP_LIMIT')) {
+      if (this.clock.phase !== 'PRE_MARKET' || (type !== 'LIMIT' && type !== 'STOP_LOSS' && type !== 'STOP_LIMIT' && type !== 'TRAILING_STOP')) {
         return {
           success: false,
           error: `Market is currently ${this.clock.phase.replace('_', ' ')}. Trading opens during regular hours.`
@@ -77,8 +77,10 @@ export class MatchingEngine extends EventEmitter {
       return { success: false, error: 'Quantity must be a positive whole integer' };
     }
 
+    const cleanLeverage = Math.min(5, Math.max(1, Number(leverage) || 1));
     const cleanPrice = price !== undefined && price !== null ? +(Number(price).toFixed(2)) : 0;
     const cleanStopPrice = stopPrice !== undefined && stopPrice !== null ? +(Number(stopPrice).toFixed(2)) : 0;
+    const cleanTrailingDelta = trailingDelta !== undefined && trailingDelta !== null ? +(Number(trailingDelta).toFixed(2)) : 5.0;
 
     if ((type === 'LIMIT' || type === 'STOP_LIMIT') && (isNaN(cleanPrice) || cleanPrice <= 0)) {
       return { success: false, error: 'Valid limit price is required' };
@@ -87,6 +89,13 @@ export class MatchingEngine extends EventEmitter {
     if ((type === 'STOP_LOSS' || type === 'STOP_LIMIT') && (isNaN(cleanStopPrice) || cleanStopPrice <= 0)) {
       return { success: false, error: 'Valid stop trigger price is required' };
     }
+
+    if (type === 'TRAILING_STOP' && (isNaN(cleanTrailingDelta) || cleanTrailingDelta <= 0)) {
+      return { success: false, error: 'Valid trailing delta distance is required' };
+    }
+
+    const currentMidPrice = book.getSpread().mid || 100;
+    let orderIsShort = Boolean(isShort);
 
     // Balance and holding validations
     if (side === 'BUY') {
@@ -101,10 +110,12 @@ export class MatchingEngine extends EventEmitter {
         estimatedPrice = cleanStopPrice * 1.05;
       } else if (type === 'STOP_LIMIT') {
         estimatedPrice = cleanPrice;
+      } else if (type === 'TRAILING_STOP') {
+        estimatedPrice = (currentMidPrice + cleanTrailingDelta) * 1.05;
       }
 
-      if (!this.accountManager.canAffordBuy(userId, estimatedPrice, cleanQty)) {
-        return { success: false, error: 'Insufficient credits to place this buy order' };
+      if (!this.accountManager.canAffordBuy(userId, estimatedPrice, cleanQty, cleanLeverage)) {
+        return { success: false, error: 'Insufficient credits/margin to place this buy order' };
       }
     } else if (side === 'SELL') {
       if (type === 'MARKET') {
@@ -115,14 +126,20 @@ export class MatchingEngine extends EventEmitter {
       }
 
       const sellCheck = this.accountManager.getSellAvailability(userId, symbol);
-      if (!sellCheck.hasHolding) {
-        return { success: false, error: `You do not own any shares of ${symbol}` };
-      }
-      if (sellCheck.availableShares < cleanQty) {
-        return {
-          success: false,
-          error: `Insufficient shares: you have ${sellCheck.availableShares} available of ${symbol} (${sellCheck.lockedShares} locked in open orders), but tried to sell ${cleanQty}`
-        };
+      if (sellCheck.availableShares >= cleanQty && !orderIsShort) {
+        // Normal Long share sale
+        orderIsShort = false;
+      } else {
+        // Short sale (borrowing shares against margin collateral)
+        orderIsShort = true;
+        const shortSharesNeeded = cleanQty - sellCheck.availableShares;
+        const shortEstPrice = cleanPrice || currentMidPrice;
+        if (!this.accountManager.canAffordShort(userId, shortEstPrice, shortSharesNeeded, cleanLeverage)) {
+          return {
+            success: false,
+            error: `Insufficient margin to short ${shortSharesNeeded} shares of ${symbol}. Requires collateral at ${cleanLeverage}x leverage.`
+          };
+        }
       }
     }
 
@@ -136,6 +153,11 @@ export class MatchingEngine extends EventEmitter {
       type,
       price: cleanPrice,
       stopPrice: cleanStopPrice,
+      trailingDelta: cleanTrailingDelta,
+      currentMarketPrice: currentMidPrice,
+      leverage: cleanLeverage,
+      isShort: orderIsShort,
+      ocoGroupId: ocoGroupId || null,
       quantity: cleanQty,
       originalQuantity: cleanQty,
       timestamp: Date.now()
@@ -144,15 +166,23 @@ export class MatchingEngine extends EventEmitter {
     // Pre-lock funds/shares if limit or stop order
     if (type === 'LIMIT') {
       if (side === 'BUY') {
-        this.accountManager.lockCredits(userId, cleanPrice * cleanQty);
-      } else {
+        const marginLock = +((cleanPrice * cleanQty) / cleanLeverage).toFixed(2);
+        this.accountManager.lockCredits(userId, marginLock);
+      } else if (!orderIsShort) {
         this.accountManager.lockShares(userId, symbol, cleanQty);
+      } else {
+        const marginLock = +((cleanPrice * cleanQty) / cleanLeverage).toFixed(2);
+        this.accountManager.lockCredits(userId, marginLock);
       }
     } else if (type === 'STOP_LIMIT') {
       if (side === 'BUY') {
-        this.accountManager.lockCredits(userId, cleanPrice * cleanQty);
-      } else {
+        const marginLock = +((cleanPrice * cleanQty) / cleanLeverage).toFixed(2);
+        this.accountManager.lockCredits(userId, marginLock);
+      } else if (!orderIsShort) {
         this.accountManager.lockShares(userId, symbol, cleanQty);
+      } else {
+        const marginLock = +((cleanPrice * cleanQty) / cleanLeverage).toFixed(2);
+        this.accountManager.lockCredits(userId, marginLock);
       }
       book.addStopOrder(order);
       this.emit('stopOrderPlaced', order);
@@ -160,9 +190,29 @@ export class MatchingEngine extends EventEmitter {
       return { success: true, order, isStop: true };
     } else if (type === 'STOP_LOSS') {
       if (side === 'BUY') {
-        this.accountManager.lockCredits(userId, cleanStopPrice * 1.05 * cleanQty);
-      } else {
+        const marginLock = +((cleanStopPrice * 1.05 * cleanQty) / cleanLeverage).toFixed(2);
+        this.accountManager.lockCredits(userId, marginLock);
+      } else if (!orderIsShort) {
         this.accountManager.lockShares(userId, symbol, cleanQty);
+      } else {
+        const marginLock = +((cleanStopPrice * 1.05 * cleanQty) / cleanLeverage).toFixed(2);
+        this.accountManager.lockCredits(userId, marginLock);
+      }
+      book.addStopOrder(order);
+      this.emit('stopOrderPlaced', order);
+      this.emit('orderbookChange', { symbol, depth: book.getDepth(10) });
+      return { success: true, order, isStop: true };
+    } else if (type === 'TRAILING_STOP') {
+      if (side === 'BUY') {
+        const estPrice = currentMidPrice + cleanTrailingDelta;
+        const marginLock = +((estPrice * 1.05 * cleanQty) / cleanLeverage).toFixed(2);
+        this.accountManager.lockCredits(userId, marginLock);
+      } else if (!orderIsShort) {
+        this.accountManager.lockShares(userId, symbol, cleanQty);
+      } else {
+        const estPrice = Math.max(0.01, currentMidPrice - cleanTrailingDelta);
+        const marginLock = +((estPrice * 1.05 * cleanQty) / cleanLeverage).toFixed(2);
+        this.accountManager.lockCredits(userId, marginLock);
       }
       book.addStopOrder(order);
       this.emit('stopOrderPlaced', order);
@@ -178,18 +228,33 @@ export class MatchingEngine extends EventEmitter {
       const buyerWasMaker = trade.takerSide === 'SELL';
       const sellerWasMaker = trade.takerSide === 'BUY';
       this.accountManager.settleTrade(trade, buyerWasMaker, sellerWasMaker);
-
       this.emit('trade', trade);
+
+      // OCO mutual cancellation: If matched order had an ocoGroupId, cancel counterpart
+      if (order.ocoGroupId) {
+        this._cancelOcoCounterpart(symbol, order.ocoGroupId, order.id);
+      }
+      if (trade.buyerOcoGroupId) {
+        const triggeringId = trade.takerSide === 'BUY' ? trade.takerOrderId : trade.makerOrderId;
+        this._cancelOcoCounterpart(symbol, trade.buyerOcoGroupId, triggeringId);
+      }
+      if (trade.sellerOcoGroupId) {
+        const triggeringId = trade.takerSide === 'SELL' ? trade.takerOrderId : trade.makerOrderId;
+        this._cancelOcoCounterpart(symbol, trade.sellerOcoGroupId, triggeringId);
+      }
     }
 
     // If limit order was filled or cancelled immediately without resting
     if (type === 'LIMIT' && !result.remainingOrder) {
-      // Any remaining unfilled portion that got cancelled should be unlocked
       if (order.quantity > 0) {
         if (side === 'BUY') {
-          this.accountManager.unlockCredits(userId, cleanPrice * order.quantity);
-        } else {
+          const unlocked = +((cleanPrice * order.quantity) / cleanLeverage).toFixed(2);
+          this.accountManager.unlockCredits(userId, unlocked);
+        } else if (!orderIsShort) {
           this.accountManager.unlockShares(userId, symbol, order.quantity);
+        } else {
+          const unlocked = +((cleanPrice * order.quantity) / cleanLeverage).toFixed(2);
+          this.accountManager.unlockCredits(userId, unlocked);
         }
       }
     }
@@ -214,6 +279,59 @@ export class MatchingEngine extends EventEmitter {
   }
 
   /**
+   * Submit an OCO (One-Cancels-the-Other) bracket order pair
+   * @param {Object} limitOrderParams - Take-profit limit order
+   * @param {Object} stopOrderParams - Stop-loss or trailing-stop order
+   */
+  submitOcoOrder(limitOrderParams, stopOrderParams) {
+    const ocoGroupId = `oco_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const limitRes = this.submitOrder({ ...limitOrderParams, ocoGroupId });
+    if (!limitRes.success) {
+      return { success: false, error: `Limit leg failed: ${limitRes.error}` };
+    }
+
+    const stopRes = this.submitOrder({ ...stopOrderParams, ocoGroupId });
+    if (!stopRes.success) {
+      // Roll back limit leg if stop submission fails
+      this.cancelOrder(limitOrderParams.symbol, limitRes.order.id, limitOrderParams.userId);
+      return { success: false, error: `Stop leg failed: ${stopRes.error}` };
+    }
+
+    return {
+      success: true,
+      ocoGroupId,
+      limitOrder: limitRes.order,
+      stopOrder: stopRes.order
+    };
+  }
+
+  /**
+   * Cancel counterpart orders in an OCO group when one leg executes
+   * @param {string} symbol
+   * @param {string} ocoGroupId
+   * @param {string} triggeringOrderId
+   */
+  _cancelOcoCounterpart(symbol, ocoGroupId, triggeringOrderId) {
+    if (!ocoGroupId) return;
+    const book = this.books.get(symbol);
+    if (!book) return;
+
+    for (const [orderId, ord] of book.orders.entries()) {
+      if (ord.ocoGroupId === ocoGroupId && orderId !== triggeringOrderId && ord.status !== 'CANCELLED' && ord.status !== 'FILLED') {
+        this.cancelOrder(symbol, orderId, ord.userId);
+        this.emit('ocoCounterpartCancelled', { symbol, ocoGroupId, cancelledOrderId: orderId });
+      }
+    }
+
+    for (const [orderId, ord] of book.stopOrders.entries()) {
+      if (ord.ocoGroupId === ocoGroupId && orderId !== triggeringOrderId && ord.status !== 'CANCELLED' && ord.status !== 'FILLED') {
+        this.cancelOrder(symbol, orderId, ord.userId);
+        this.emit('ocoCounterpartCancelled', { symbol, ocoGroupId, cancelledOrderId: orderId });
+      }
+    }
+  }
+
+  /**
    * Check and execute resting stop orders triggered by a price movement
    * @param {string} symbol
    * @param {number} lastPrice
@@ -227,14 +345,22 @@ export class MatchingEngine extends EventEmitter {
       for (const stopOrder of triggeredOrders) {
         this.emit('stopOrderTriggered', stopOrder);
 
-        if (stopOrder.type === 'STOP_LOSS') {
+        // Cancel OCO counterpart if stop order triggered
+        if (stopOrder.ocoGroupId) {
+          this._cancelOcoCounterpart(symbol, stopOrder.ocoGroupId, stopOrder.id);
+        }
+
+        if (stopOrder.type === 'STOP_LOSS' || stopOrder.type === 'TRAILING_STOP') {
           // Convert to MARKET order
           stopOrder.type = 'MARKET';
           if (stopOrder.side === 'BUY') {
             const lockedAmount = +(stopOrder.stopPrice * 1.05 * stopOrder.quantity).toFixed(2);
             this.accountManager.unlockCredits(stopOrder.userId, lockedAmount);
-          } else {
+          } else if (!stopOrder.isShort) {
             this.accountManager.unlockShares(stopOrder.userId, stopOrder.symbol, stopOrder.quantity);
+          } else {
+            const lockedAmount = +(stopOrder.stopPrice * 1.05 * stopOrder.quantity).toFixed(2);
+            this.accountManager.unlockCredits(stopOrder.userId, lockedAmount);
           }
 
           const res = book.processOrder(stopOrder);
@@ -257,8 +383,10 @@ export class MatchingEngine extends EventEmitter {
           if (!res.remainingOrder && stopOrder.quantity > 0) {
             if (stopOrder.side === 'BUY') {
               this.accountManager.unlockCredits(stopOrder.userId, stopOrder.price * stopOrder.quantity);
-            } else {
+            } else if (!stopOrder.isShort) {
               this.accountManager.unlockShares(stopOrder.userId, symbol, stopOrder.quantity);
+            } else {
+              this.accountManager.unlockCredits(stopOrder.userId, stopOrder.price * stopOrder.quantity);
             }
           }
         }
@@ -276,11 +404,68 @@ export class MatchingEngine extends EventEmitter {
     }
   }
 
+  /**
+   * Check an account for margin call and trigger automated liquidation if equity < maintenance margin
+   * @param {string} userId
+   * @returns {Array<Object>|null}
+   */
+  checkAndLiquidate(userId) {
+    const prices = {};
+    for (const [sym, b] of this.books.entries()) {
+      prices[sym] = b.getSpread().mid || 100;
+    }
+
+    const marginStatus = this.accountManager.getMarginStatus(userId, prices);
+    if (!marginStatus || !marginStatus.isMarginCall) return null;
+
+    const user = this.accountManager.getUser(userId);
+    if (!user) return null;
+
+    const liquidations = [];
+    for (const [sym, h] of user.holdings.entries()) {
+      const book = this.books.get(sym);
+      if (!book) continue;
+
+      // Liquidate short positions (buy to cover)
+      if (h.shortQuantity > 0) {
+        const coverQty = h.shortQuantity;
+        const res = this.submitOrder({
+          userId: user.id,
+          userName: user.name,
+          symbol: sym,
+          side: 'BUY',
+          type: 'MARKET',
+          quantity: coverQty,
+          leverage: 1
+        });
+        liquidations.push({ symbol: sym, action: 'LIQUIDATE_SHORT', quantity: coverQty, result: res });
+      }
+
+      // Liquidate long positions (market sell)
+      if (h.quantity > 0) {
+        const sellQty = h.quantity;
+        const res = this.submitOrder({
+          userId: user.id,
+          userName: user.name,
+          symbol: sym,
+          side: 'SELL',
+          type: 'MARKET',
+          quantity: sellQty,
+          leverage: 1
+        });
+        liquidations.push({ symbol: sym, action: 'LIQUIDATE_LONG', quantity: sellQty, result: res });
+      }
+    }
+
+    this.emit('liquidation', { userId, liquidations, timestamp: Date.now() });
+    return liquidations;
+  }
+
   cancelOrder(symbol, orderId, userId) {
     const book = this.books.get(symbol);
     if (!book) return { success: false, error: 'Invalid symbol' };
 
-    const order = book.orders.get(orderId);
+    const order = book.orders.get(orderId) || book.stopOrders.get(orderId);
     if (!order) return { success: false, error: 'Order not found or already filled' };
 
     if (order.userId !== userId) {
@@ -291,14 +476,19 @@ export class MatchingEngine extends EventEmitter {
     if (cancelled) {
       // Unlock remaining reserved capital/shares
       if (cancelled.side === 'BUY') {
-        if (cancelled.type === 'STOP_LOSS') {
+        if (cancelled.type === 'STOP_LOSS' || cancelled.type === 'TRAILING_STOP') {
           const lockedAmount = +(cancelled.stopPrice * 1.05 * cancelled.quantity).toFixed(2);
           this.accountManager.unlockCredits(userId, lockedAmount);
         } else {
-          this.accountManager.unlockCredits(userId, cancelled.price * cancelled.quantity);
+          this.accountManager.unlockCredits(userId, (cancelled.price || cancelled.stopPrice || 0) * cancelled.quantity);
         }
       } else {
-        this.accountManager.unlockShares(userId, symbol, cancelled.quantity);
+        if (!cancelled.isShort) {
+          this.accountManager.unlockShares(userId, symbol, cancelled.quantity);
+        } else {
+          const lockedAmount = +(cancelled.stopPrice * 1.05 * cancelled.quantity).toFixed(2);
+          this.accountManager.unlockCredits(userId, lockedAmount);
+        }
       }
 
       this.emit('orderbookChange', {

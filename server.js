@@ -101,6 +101,20 @@ matchingEngine.on('stopOrderTriggered', (order) => {
   sendPortfolioUpdate(order.userId);
 });
 
+matchingEngine.on('ocoCounterpartCancelled', ({ symbol, ocoGroupId, cancelledOrderId }) => {
+  io.emit('order:ocoCancelled', { symbol, ocoGroupId, cancelledOrderId });
+});
+
+matchingEngine.on('liquidation', ({ userId, liquidations }) => {
+  const sockets = userSockets.get(userId);
+  if (sockets) {
+    for (const sId of sockets) {
+      io.to(sId).emit('margin:liquidation', { liquidations });
+    }
+  }
+  sendPortfolioUpdate(userId);
+});
+
 matchingEngine.on('trade', (trade) => {
   io.emit('trade:new', trade);
 
@@ -121,6 +135,10 @@ matchingEngine.on('trade', (trade) => {
   // Check achievements upon settlement
   triggerAchievementCheck(trade.buyerId);
   triggerAchievementCheck(trade.sellerId);
+
+  // Check margin calls and liquidation for both parties
+  matchingEngine.checkAndLiquidate(trade.buyerId);
+  matchingEngine.checkAndLiquidate(trade.sellerId);
 
   // Notify buyer and seller with fresh portfolio
   sendPortfolioUpdate(trade.buyerId);
@@ -227,11 +245,69 @@ io.on('connection', (socket) => {
       type: orderData.type,
       price: orderData.price,
       stopPrice: orderData.stopPrice,
+      trailingDelta: orderData.trailingDelta,
+      leverage: orderData.leverage || 1,
+      isShort: Boolean(orderData.isShort),
+      ocoGroupId: orderData.ocoGroupId || null,
       quantity: orderData.quantity
     });
 
-    if (result.success && (orderData.type === 'STOP_LOSS' || orderData.type === 'STOP_LIMIT')) {
+    if (result.success && (orderData.type === 'STOP_LOSS' || orderData.type === 'STOP_LIMIT' || orderData.type === 'TRAILING_STOP')) {
       triggerAchievementCheck(userId, 'STOP_ORDER_PLACED', result.order);
+    }
+
+    // Check liquidation if needed
+    matchingEngine.checkAndLiquidate(userId);
+
+    sendPortfolioUpdate(userId);
+
+    if (callback) {
+      callback(result);
+    }
+  });
+
+  socket.on('order:placeOco', (payload, callback) => {
+    if (!userId) {
+      if (callback) callback({ success: false, error: 'Not registered' });
+      return;
+    }
+
+    const user = accountManager.getUser(userId);
+    const userName = user ? user.name : 'Human Trader';
+
+    let limitOrder = payload.limitOrder;
+    let stopOrder = payload.stopOrder;
+
+    if (!limitOrder || !stopOrder) {
+      const sym = payload.symbol;
+      const side = payload.side || 'SELL';
+      const qty = payload.quantity || 1;
+      const lev = payload.leverage || 1;
+      limitOrder = {
+        symbol: sym,
+        side,
+        type: 'LIMIT',
+        price: payload.limitPrice || payload.price,
+        quantity: qty,
+        leverage: lev
+      };
+      stopOrder = {
+        symbol: sym,
+        side,
+        type: 'STOP_LOSS',
+        stopPrice: payload.stopPrice,
+        quantity: qty,
+        leverage: lev
+      };
+    }
+
+    const result = matchingEngine.submitOcoOrder(
+      { ...limitOrder, userId, userName },
+      { ...stopOrder, userId, userName }
+    );
+
+    if (result.success) {
+      triggerAchievementCheck(userId, 'STOP_ORDER_PLACED', result.stopOrder);
     }
 
     sendPortfolioUpdate(userId);

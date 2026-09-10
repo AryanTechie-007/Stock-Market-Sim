@@ -2,17 +2,17 @@
 
 ## Repository Metadata
 
-- **Current Pushed Version:** v0.3
+- **Current Pushed Version:** v0.4
 - **Username:** AryanTechie-007
-- **Push Timestamp:** 2026-09-10 21:18:00 IST (UTC+05:30)
-- **Current Status:** Deployed Build (Tier 2 - Advanced Trading & Gamification Release)
+- **Push Timestamp:** 2026-09-10 22:20:00 IST (UTC+05:30)
+- **Current Status:** Deployed Build (Tier 3 - Advanced Execution Mechanics & Margin Trading Release)
 - **Repository:** https://github.com/AryanTechie-007/Stock-Market-Sim
 
 ---
 
 ## Overview
 
-MarketArena is a high-performance, gamified financial market simulator and quantitative trading terminal built with Node.js, Express, Socket.IO, and a vanilla JavaScript frontend terminal. The platform provides a realistic, continuous double-auction equity exchange featuring FIFO price-time order matching, conditional stop orders, multi-asset portfolio accounting, simulated market clock cycles, eight autonomous algorithmic NPC traders, an achievements milestone engine, end-of-day settlement summaries, and native relational state persistence.
+MarketArena is a high-performance, gamified financial market simulator and quantitative trading terminal built with Node.js, Express, Socket.IO, and a vanilla JavaScript frontend terminal. The platform provides a realistic, continuous double-auction equity exchange featuring FIFO price-time order matching, conditional stop and bracket orders, margin leverage, short selling, an automated liquidation engine, multi-asset portfolio accounting, simulated market clock cycles, eight autonomous algorithmic NPC traders, an achievements milestone engine, end-of-day settlement summaries, and native relational state persistence.
 
 ---
 
@@ -40,22 +40,37 @@ The system is partitioned into modular subsystems within the `engine/` and `trad
   - **MARKET Orders:** Matched immediately against resting liquidity with slippage protection buffers.
   - **STOP LOSS Orders:** Conditional risk-management orders held outside the active order book. When market price drops to or below the trigger threshold (for sells) or rises to or above the threshold (for breakout buys), the order automatically converts to a Market order and executes against the book.
   - **STOP LIMIT Orders:** Conditional orders that convert to resting or matching Limit orders at the specified limit price once the stop trigger price is breached.
-- **Capital and Holding Validation:** Validates funds and share inventory before routing to the book or stop queue. Buyers have credits locked upon order submission; sellers have share quantities locked to prevent double-spending.
+  - **TRAILING STOP Orders:** Dynamic conditional orders with a floating trigger price that automatically ratchets upward as market price advances (for long exits) or downward as market price falls (for short covers), locking in unrealized gains while triggering immediate execution on directional reversal.
+  - **OCO (One-Cancels-the-Other) Bracket Orders:** Paired order execution combining an upside Take-Profit limit order and a downside Stop-Loss order. As soon as either leg executes (as maker or taker), the counterpart order is automatically cancelled from the order book or resting stop queue, preventing double execution.
+- **Margin Trading & Leverage:**
+  - Configurable leverage tiers (1x Cash, 2x Margin, 5x Margin).
+  - Margin borrowing against account collateral with automatic borrowing calculation and margin loan tracking.
+- **Short Selling & Buy-to-Cover:**
+  - Enables selling borrowed shares without preexisting long holdings.
+  - Proceeds are credited to cash with initial margin collateral requirements locked.
+  - Subsequent purchases automatically buy-to-cover short liabilities, calculating realized profit and loss against the short cost basis.
+- **Automated Liquidation Engine:**
+  - Continuously evaluates account equity against maintenance margin requirements (25% for long positions, 30% for short positions).
+  - Triggers forced market liquidations across positions if total equity falls below the maintenance threshold, preventing negative account balances.
+- **Capital and Holding Validation:** Validates funds, collateral, and share inventory before routing to the book or stop queue.
 - **Self-Trade Prevention:** Prevents matching of orders submitted by the same participant ID.
-- **Order Cancellation:** Allows cancellation of resting limit and stop orders, immediately unlocking reserved capital or shares.
+- **Order Cancellation:** Allows cancellation of resting limit, stop, and trailing orders, immediately unlocking reserved capital or shares.
 
 ### 2. Account and Portfolio Management (`engine/accounts.js`)
 - **Initial Capital:** Default allocation of 100,000.00 Credits (CR) per human user.
 - **Double-Entry Settlement:**
-  - Executes instant cash and equity settlement upon trade matching.
-  - Tracks available cash versus locked cash (reserved for resting buy orders).
-  - Tracks available shares versus locked shares (reserved for resting sell orders).
+  - Executes instant cash, equity, and margin loan settlement upon trade matching.
+  - Tracks available cash versus locked cash (reserved for resting buy orders or short margin).
+  - Tracks available long shares versus locked shares (reserved for resting sell orders).
+  - Tracks short quantities, short average prices, and locked short quantities.
 - **Position Accounting:**
-  - Dynamic average cost basis calculation on buy executions.
-  - Realized Profit and Loss (P&L) calculation upon share liquidations.
-  - Unrealized P&L calculation against live market mark-to-market prices.
+  - Dynamic average cost basis calculation on long buy executions.
+  - Short average execution price calculation on short selling executions.
+  - Realized Profit and Loss (P&L) calculation upon share liquidations or buy-to-cover executions.
+  - Unrealized P&L calculation against live market mark-to-market prices for both long and short positions.
+  - Margin metrics: Total equity, total margin loan, maintenance margin requirement, and margin call alerts.
   - Real-time net worth and percentage return metrics.
-- **Trade History Ledger:** Logs all executions with price, quantity, gross trade value, Maker vs. Taker role, counterparty, and realized P&L.
+- **Trade History Ledger:** Logs all executions with price, quantity, gross trade value, Maker vs. Taker role, counterparty, leverage, short indicator, and realized P&L.
 - **Achievements & Milestone Engine:** Evaluates criteria upon trade settlement and order routing. Grants credit rewards and persists badges to SQLite.
 - **Daily Performance Snapshot:** Tracks starting net worth per day, day P&L, day volume, and daily trade counts for end-of-day settlement.
 - **Leaderboard Calculation:** Ranks all human and NPC participants by total net worth and total return.
@@ -63,11 +78,11 @@ The system is partitioned into modular subsystems within the `engine/` and `trad
 ### 3. Relational Persistence (`engine/sqlite-storage.js`)
 - **Database Engine:** Node.js native `node:sqlite` (`DatabaseSync`).
 - **Relational Tables:**
-  - `accounts`: User identification, starting capital, current credits, locked credits, realized P&L, trades count, volume.
-  - `holdings`: Foreign-key bound user positions per symbol, share quantity, average cost price, and locked quantity.
-  - `trade_history`: Foreign-key bound chronological transaction log with execution timestamps and counterparty metadata.
+  - `accounts`: User identification, starting capital, current credits, locked credits, margin loans, leverage settings, realized P&L, trades count, volume.
+  - `holdings`: Foreign-key bound user positions per symbol, long share quantity, average cost price, locked quantity, short quantity, short average price, and locked short quantity.
+  - `trade_history`: Foreign-key bound chronological transaction log with execution timestamps, counterparty metadata, leverage, and short flags.
   - `achievements`: Foreign-key bound records of unlocked badges and milestone timestamps.
-- **Bootstrap Restoration:** Automatically reconstructs all active human trader portfolios, holdings, transaction histories, and unlocked achievements upon server start.
+- **Bootstrap Restoration:** Automatically reconstructs all active human trader portfolios, holdings (long and short), margin balances, transaction histories, and unlocked achievements upon server start.
 
 ### 4. Market Clock and Phased Trading (`engine/clock.js`)
 - **Day and Session State Machine:**
@@ -118,13 +133,15 @@ The web client provides a desktop terminal layout:
 - **Live Execution Tape:** Real-time stream of matched trades showing price, quantity, taker side, and execution timestamps.
 - **Order Entry Pad:**
   - Interactive controls for Buy/Sell selection.
-  - Four order execution types: Limit, Market, Stop Loss, and Stop Limit.
-  - Dynamic fields for limit price and stop trigger price with autofill helpers.
+  - Six order execution types: Limit, Market, Stop Loss, Stop Limit, Trailing Stop, and OCO Bracket.
+  - Trailing Stop Delta input field with dynamic ratchet tracking.
+  - OCO dual inputs: Take-Profit Limit Price and Stop-Loss Trigger Price with best-quote autofill.
+  - Leverage selector toggles (1x Cash, 2x Margin, 5x Margin) with real-time collateral margin cost estimation.
   - Quick percentage sizing (25%, 50%, 75%, Max), estimated trade value calculation, and best-price autofill.
 - **Order Book Ladder:** Depth visualization displaying aggregate bid and ask volumes, cumulative depth bars, and bid-ask spread indicators.
 - **Bottom Drawer Tabbed Views:**
-  - **Portfolio:** Net worth, cash, locked funds, realized and unrealized P&L, holdings table with average cost and position values.
-  - **Open Orders:** Active resting limit and stop orders with trigger thresholds and immediate cancellation triggers.
+  - **Portfolio:** Net worth, cash, locked funds, margin loan, margin health level, realized and unrealized P&L, holdings table with average cost, position values, and Long/Short badges.
+  - **Open Orders:** Active resting limit, stop, trailing stop, and OCO bracket orders with trigger thresholds and immediate cancellation buttons.
   - **My Trades:** Personal transaction ledger with execution timestamps, symbols, Buy/Sell indicators, Maker/Taker badges, and realized P&L.
   - **Achievements:** Trophy room displaying all 7 trading badges, completion status, criteria descriptions, and reward values.
   - **Leaderboard:** Live rankings of all active human and bot participants.
@@ -187,9 +204,10 @@ To execute the unit and integration test suite:
 node tests/engine.test.js
 ```
 
-To execute the live WebSocket integration test:
+To execute the live WebSocket integration tests:
 ```bash
 node tests/tier2_e2e_simulation.js
+node tests/v04_e2e_simulation.js
 ```
 
 ### Verified Test Cases:
@@ -203,6 +221,11 @@ node tests/tier2_e2e_simulation.js
 8. Advanced order types (Stop-Loss and Stop-Limit execution upon price trigger breaches).
 9. Achievements milestone detection, reward credit awards, and SQLite persistence.
 10. Multi-day progression, end-of-day summary calculation, and clean day rollover.
+11. Trailing Stop dynamic ratcheting and execution on directional reversals.
+12. OCO bracket orders mutual cancellation upon execution of either leg.
+13. Short selling, margin collateral verification, and buy-to-cover P&L settlement.
+14. Margin borrowing (up to 5x), maintenance margin monitoring, and automated forced liquidation.
+15. SQLite persistence of margin loans, short positions, and short cost basis.
 
 ---
 
@@ -211,4 +234,4 @@ node tests/tier2_e2e_simulation.js
 - **v0.1 (Pushed to GitHub):** Initial release featuring FIFO matching engine, account management, multi-archetype NPC bots, market clock cycle, and full-featured web trading terminal.
 - **v0.2 (Pushed to GitHub):** Native SQLite relational persistence, personal trade history ledger and terminal tab, advanced candlestick and volume charting with crosshair inspection, and harmonic audio feedback.
 - **v0.3 (Pushed to GitHub):** Advanced order types (Stop Loss & Stop Limit), 7 gamified achievements with credit rewards and HUD toasts, multi-day progression with End-of-Day recap modal, smarter NPC behavior (volatility spreads, news catalysts, SMA momentum), and full 10-test automated suite.
-
+- **v0.4 (Current Release):** Advanced execution mechanics: Trailing Stop orders with dynamic peak/trough ratcheting, OCO (One-Cancels-the-Other) bracket orders with mutual counterpart cancellation, Margin Trading with up to 5x leverage, Short Selling with borrow collateral mechanics, automated maintenance margin monitoring and forced liquidation engine, SQLite schema migrations for margin loans and short positions, and expanded 15-test automated verification suite.

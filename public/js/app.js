@@ -10,6 +10,7 @@ const state = {
   selectedSymbol: 'AUTO',
   orderSide: 'BUY',
   orderType: 'LIMIT',
+  leverage: 1,
   companies: new Map(), // symbol -> company
   depths: new Map(),    // symbol -> depth
   clock: {
@@ -217,12 +218,26 @@ const elements = {
   typeMarketBtn: document.getElementById('typeMarketBtn'),
   typeStopLossBtn: document.getElementById('typeStopLossBtn'),
   typeStopLimitBtn: document.getElementById('typeStopLimitBtn'),
+  typeTrailingStopBtn: document.getElementById('typeTrailingStopBtn'),
+  typeOcoBtn: document.getElementById('typeOcoBtn'),
   limitPriceField: document.getElementById('limitPriceField'),
   orderPriceInput: document.getElementById('orderPriceInput'),
   useBestPriceBtn: document.getElementById('useBestPriceBtn'),
   stopPriceField: document.getElementById('stopPriceField'),
   orderStopPriceInput: document.getElementById('orderStopPriceInput'),
   useCurrentAsStopBtn: document.getElementById('useCurrentAsStopBtn'),
+  trailingDeltaField: document.getElementById('trailingDeltaField'),
+  orderTrailingDeltaInput: document.getElementById('orderTrailingDeltaInput'),
+  ocoFields: document.getElementById('ocoFields'),
+  orderOcoLimitInput: document.getElementById('orderOcoLimitInput'),
+  orderOcoStopInput: document.getElementById('orderOcoStopInput'),
+  useOcoLimitBestBtn: document.getElementById('useOcoLimitBestBtn'),
+  useOcoStopMarketBtn: document.getElementById('useOcoStopMarketBtn'),
+  leverageField: document.getElementById('leverageField'),
+  leverageModeBadge: document.getElementById('leverageModeBadge'),
+  lev1Btn: document.getElementById('lev1Btn'),
+  lev2Btn: document.getElementById('lev2Btn'),
+  lev5Btn: document.getElementById('lev5Btn'),
   orderQtyInput: document.getElementById('orderQtyInput'),
   orderEstimatedTotal: document.getElementById('orderEstimatedTotal'),
   submitOrderBtn: document.getElementById('submitOrderBtn'),
@@ -274,6 +289,8 @@ const elements = {
   metricCash: document.getElementById('metricCash'),
   metricStockVal: document.getElementById('metricStockVal'),
   metricLocked: document.getElementById('metricLocked'),
+  metricMarginLoan: document.getElementById('metricMarginLoan'),
+  metricMarginLevel: document.getElementById('metricMarginLevel'),
   metricTotalPnL: document.getElementById('metricTotalPnL'),
   metricRealizedPnL: document.getElementById('metricRealizedPnL'),
   holdingsTableBody: document.getElementById('holdingsTableBody'),
@@ -768,7 +785,16 @@ function renderPortfolio(portfolio) {
   elements.metricNetWorth.textContent = formatCurrency(portfolio.totalNetWorth);
   elements.metricCash.textContent = formatCurrency(portfolio.availableCredits);
   elements.metricStockVal.textContent = formatCurrency(portfolio.stockValue);
-  elements.metricLocked.textContent = formatCurrency(portfolio.lockedCredits);
+  if (elements.metricLocked) elements.metricLocked.textContent = formatCurrency(portfolio.lockedCredits);
+  if (elements.metricMarginLoan) elements.metricMarginLoan.textContent = formatCurrency(portfolio.marginLoan || 0);
+
+  if (elements.metricMarginLevel) {
+    if (portfolio.isMarginCall) {
+      elements.metricMarginLevel.innerHTML = `<span class="badge-margin-call">CALL (${portfolio.marginLevel}%)</span>`;
+    } else {
+      elements.metricMarginLevel.innerHTML = `<span style="font-family:var(--mono);color:var(--text);">${portfolio.marginLevel >= 999 ? '100% (No Debt)' : portfolio.marginLevel + '% Safe'}</span>`;
+    }
+  }
 
   const isProfit = portfolio.totalPnL >= 0;
   const sign = isProfit ? '+' : '';
@@ -785,15 +811,19 @@ function renderPortfolio(portfolio) {
   // Holdings Table
   elements.holdingsTableBody.innerHTML = '';
   if (!portfolio.holdings || portfolio.holdings.length === 0) {
-    elements.holdingsTableBody.innerHTML = `<tr class="empty-row"><td colspan="9">No positions yet — select a stock and place your first order.</td></tr>`;
+    elements.holdingsTableBody.innerHTML = `<tr class="empty-row"><td colspan="10">No positions yet — select a stock and place your first order.</td></tr>`;
   } else {
     for (const h of portfolio.holdings) {
       const isHProfit = h.unrealizedPnL >= 0;
       const hSign = isHProfit ? '+' : '';
       const hCls = isHProfit ? 'up' : 'down';
+      const posBadge = h.positionType === 'SHORT'
+        ? `<span class="badge-short">SHORT</span>`
+        : `<span class="badge-long">LONG</span>`;
       const row = document.createElement('tr');
       row.innerHTML = `
         <td><b style="color:var(--text);font-family:var(--mono)">${h.symbol}</b></td>
+        <td>${posBadge}</td>
         <td>${h.quantity}</td>
         <td>${h.availableQty} ${h.lockedQty > 0 ? `<span style="color:var(--amber);font-size:9px">(${h.lockedQty} locked)</span>` : ''}</td>
         <td>${h.avgPrice.toFixed(2)}</td>
@@ -873,14 +903,37 @@ function renderOpenOrders(openOrders) {
       priceDisplay = `Stop: ${ord.stopPrice ? Number(ord.stopPrice).toFixed(2) : '—'} CR`;
     } else if (ord.type === 'STOP_LIMIT') {
       priceDisplay = `Stop: ${ord.stopPrice ? Number(ord.stopPrice).toFixed(2) : '—'} | Lmt: ${Number(ord.price).toFixed(2)}`;
+    } else if (ord.type === 'TRAILING_STOP') {
+      priceDisplay = `Trail Δ: ${Number(ord.trailingDelta || 0).toFixed(2)} | Stop: ${Number(ord.stopPrice || 0).toFixed(2)}`;
     }
 
-    const typeBadge = (ord.type === 'STOP_LOSS' || ord.type === 'STOP_LIMIT')
-      ? `<span class="badge-tag" style="color:var(--amber);border-color:var(--amber)">${ord.type.replace('_', ' ')}</span>`
-      : ord.type;
+    let typeBadge = ord.type.replace('_', ' ');
+    if (ord.type === 'STOP_LOSS' || ord.type === 'STOP_LIMIT' || ord.type === 'TRAILING_STOP') {
+      typeBadge = `<span class="badge-tag" style="color:var(--amber);border-color:var(--amber)">${ord.type.replace('_', ' ')}</span>`;
+    }
+    if (ord.ocoGroupId) {
+      typeBadge += ` <span style="font-size:9px;color:var(--text-faint);font-family:var(--mono)">[OCO]</span>`;
+    }
+    if (ord.isShort) {
+      typeBadge += ` <span class="badge-short">SHORT</span>`;
+    }
 
     row.innerHTML = `
       <td style="font-size:10px;color:var(--text-faint)">${ord.id.slice(-8)}</td>
+      <td><b>${ord.symbol}</b></td>
+      <td class="${sideCls}">${ord.side}</td>
+      <td>${typeBadge}</td>
+      <td>${priceDisplay}</td>
+      <td>${ord.originalQuantity}</td>
+      <td>${ord.quantity}</td>
+      <td>${new Date(ord.timestamp).toLocaleTimeString()}</td>
+      <td style="text-align:right">
+        <button class="btn-cancel" onclick="cancelOrder('${ord.symbol}', '${ord.id}')">CANCEL</button>
+      </td>
+    `;
+    elements.openOrdersTableBody.appendChild(row);
+  }
+}
       <td><b>${ord.symbol}</b></td>
       <td class="${sideCls}">${ord.side}</td>
       <td>${typeBadge}</td>
@@ -1041,7 +1094,10 @@ function setOrderType(type) {
   elements.typeMarketBtn.classList.toggle('on', type === 'MARKET');
   elements.typeStopLossBtn.classList.toggle('on', type === 'STOP_LOSS');
   elements.typeStopLimitBtn.classList.toggle('on', type === 'STOP_LIMIT');
+  if (elements.typeTrailingStopBtn) elements.typeTrailingStopBtn.classList.toggle('on', type === 'TRAILING_STOP');
+  if (elements.typeOcoBtn) elements.typeOcoBtn.classList.toggle('on', type === 'OCO');
 
+  // Limit Price Field visibility
   if (type === 'LIMIT' || type === 'STOP_LIMIT') {
     elements.limitPriceField.classList.remove('hidden');
     elements.limitPriceField.style.display = 'block';
@@ -1050,6 +1106,7 @@ function setOrderType(type) {
     elements.limitPriceField.style.display = 'none';
   }
 
+  // Stop Price Field visibility
   if (type === 'STOP_LOSS' || type === 'STOP_LIMIT') {
     elements.stopPriceField.classList.remove('hidden');
     elements.stopPriceField.style.display = 'block';
@@ -1062,8 +1119,49 @@ function setOrderType(type) {
     elements.stopPriceField.style.display = 'none';
   }
 
+  // Trailing Delta Field visibility
+  if (elements.trailingDeltaField) {
+    if (type === 'TRAILING_STOP') {
+      elements.trailingDeltaField.classList.remove('hidden');
+      elements.trailingDeltaField.style.display = 'block';
+      if (!elements.orderTrailingDeltaInput.value) {
+        elements.orderTrailingDeltaInput.value = '5.00';
+      }
+    } else {
+      elements.trailingDeltaField.classList.add('hidden');
+      elements.trailingDeltaField.style.display = 'none';
+    }
+  }
+
+  // OCO Fields visibility
+  if (elements.ocoFields) {
+    if (type === 'OCO') {
+      elements.ocoFields.classList.remove('hidden');
+      elements.ocoFields.style.display = 'block';
+      const comp = state.companies.get(state.selectedSymbol);
+      if (comp) {
+        if (!elements.orderOcoLimitInput.value) elements.orderOcoLimitInput.value = +(comp.price * 1.05).toFixed(2);
+        if (!elements.orderOcoStopInput.value) elements.orderOcoStopInput.value = +(comp.price * 0.95).toFixed(2);
+      }
+    } else {
+      elements.ocoFields.classList.add('hidden');
+      elements.ocoFields.style.display = 'none';
+    }
+  }
+
   const prettyType = type.replace('_', ' ');
   elements.submitOrderBtn.textContent = `PLACE ${prettyType} ${state.orderSide}`;
+  updateCostEstimate();
+}
+
+function setLeverage(lev) {
+  state.leverage = lev;
+  if (elements.lev1Btn) elements.lev1Btn.classList.toggle('on', lev === 1);
+  if (elements.lev2Btn) elements.lev2Btn.classList.toggle('on', lev === 2);
+  if (elements.lev5Btn) elements.lev5Btn.classList.toggle('on', lev === 5);
+  if (elements.leverageModeBadge) {
+    elements.leverageModeBadge.textContent = lev === 1 ? '1x Cash' : `${lev}x Margin (${(100/lev).toFixed(0)}% Collateral)`;
+  }
   updateCostEstimate();
 }
 
@@ -1076,11 +1174,20 @@ function updateCostEstimate() {
     price = parseFloat(elements.orderPriceInput.value) || comp.price;
   } else if (state.orderType === 'STOP_LOSS') {
     price = parseFloat(elements.orderStopPriceInput.value) || comp.price;
+  } else if (state.orderType === 'OCO') {
+    price = parseFloat(elements.orderOcoLimitInput.value) || comp.price;
   }
 
   const qty = parseInt(elements.orderQtyInput.value, 10) || 0;
-  const total = price * qty;
-  elements.orderEstimatedTotal.textContent = formatCurrency(total);
+  const grossTotal = price * qty;
+  const lev = state.leverage || 1;
+  const marginReq = +(grossTotal / lev).toFixed(2);
+
+  if (lev > 1) {
+    elements.orderEstimatedTotal.textContent = `${formatCurrency(marginReq)} (${lev}x Margin / Tot ${formatCurrency(grossTotal)})`;
+  } else {
+    elements.orderEstimatedTotal.textContent = formatCurrency(grossTotal);
+  }
 }
 
 elements.sideBuyTab.addEventListener('click', () => setOrderSide('BUY'));
@@ -1089,9 +1196,18 @@ elements.typeLimitBtn.addEventListener('click', () => setOrderType('LIMIT'));
 elements.typeMarketBtn.addEventListener('click', () => setOrderType('MARKET'));
 elements.typeStopLossBtn.addEventListener('click', () => setOrderType('STOP_LOSS'));
 elements.typeStopLimitBtn.addEventListener('click', () => setOrderType('STOP_LIMIT'));
+if (elements.typeTrailingStopBtn) elements.typeTrailingStopBtn.addEventListener('click', () => setOrderType('TRAILING_STOP'));
+if (elements.typeOcoBtn) elements.typeOcoBtn.addEventListener('click', () => setOrderType('OCO'));
+
+if (elements.lev1Btn) elements.lev1Btn.addEventListener('click', () => setLeverage(1));
+if (elements.lev2Btn) elements.lev2Btn.addEventListener('click', () => setLeverage(2));
+if (elements.lev5Btn) elements.lev5Btn.addEventListener('click', () => setLeverage(5));
 
 elements.orderPriceInput.addEventListener('input', updateCostEstimate);
 elements.orderStopPriceInput.addEventListener('input', updateCostEstimate);
+if (elements.orderTrailingDeltaInput) elements.orderTrailingDeltaInput.addEventListener('input', updateCostEstimate);
+if (elements.orderOcoLimitInput) elements.orderOcoLimitInput.addEventListener('input', updateCostEstimate);
+if (elements.orderOcoStopInput) elements.orderOcoStopInput.addEventListener('input', updateCostEstimate);
 elements.orderQtyInput.addEventListener('input', updateCostEstimate);
 
 elements.useBestPriceBtn.addEventListener('click', (e) => {
@@ -1115,6 +1231,28 @@ elements.useCurrentAsStopBtn.addEventListener('click', (e) => {
   }
 });
 
+if (elements.useOcoLimitBestBtn) {
+  elements.useOcoLimitBestBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    const depth = state.depths.get(state.selectedSymbol);
+    if (!depth) return;
+    const px = state.orderSide === 'BUY' ? depth.spread.ask : depth.spread.bid;
+    if (px) elements.orderOcoLimitInput.value = px.toFixed(2);
+    updateCostEstimate();
+  });
+}
+
+if (elements.useOcoStopMarketBtn) {
+  elements.useOcoStopMarketBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    const comp = state.companies.get(state.selectedSymbol);
+    if (comp) {
+      elements.orderOcoStopInput.value = comp.price.toFixed(2);
+      updateCostEstimate();
+    }
+  });
+}
+
 // Quick Quantity Percentage Buttons
 document.querySelectorAll('.pct-btn').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -1127,16 +1265,26 @@ document.querySelectorAll('.pct-btn').forEach(btn => {
       price = parseFloat(elements.orderPriceInput.value) || comp.price;
     } else if (state.orderType === 'STOP_LOSS') {
       price = parseFloat(elements.orderStopPriceInput.value) || comp.price;
+    } else if (state.orderType === 'OCO') {
+      price = parseFloat(elements.orderOcoLimitInput.value) || comp.price;
     }
 
+    const lev = state.leverage || 1;
     if (state.orderSide === 'BUY') {
-      const budget = state.portfolio.availableCredits * pct;
+      const budget = state.portfolio.availableCredits * pct * lev;
       const maxShares = Math.floor(budget / price);
       elements.orderQtyInput.value = Math.max(1, maxShares);
     } else {
-      const holding = state.portfolio.holdings.find(h => h.symbol === state.selectedSymbol);
+      const holding = state.portfolio.holdings.find(h => h.symbol === state.selectedSymbol && h.positionType === 'LONG');
       const availableShares = holding ? holding.availableQty : 0;
-      elements.orderQtyInput.value = Math.max(0, Math.floor(availableShares * pct));
+      if (availableShares > 0) {
+        elements.orderQtyInput.value = Math.max(1, Math.floor(availableShares * pct));
+      } else {
+        // Short sell sizing based on available margin
+        const budget = state.portfolio.availableCredits * pct * lev;
+        const maxShares = Math.floor(budget / price);
+        elements.orderQtyInput.value = Math.max(1, maxShares);
+      }
     }
     updateCostEstimate();
   });
@@ -1150,6 +1298,58 @@ elements.orderForm.addEventListener('submit', (e) => {
   const comp = state.companies.get(state.selectedSymbol);
   if (!comp) return;
 
+  const quantity = parseInt(elements.orderQtyInput.value, 10);
+  if (!quantity || quantity <= 0) {
+    elements.orderErrorMsg.textContent = 'Invalid quantity';
+    return;
+  }
+
+  // Handle OCO Bracket submission
+  if (state.orderType === 'OCO') {
+    const ocoLimit = parseFloat(elements.orderOcoLimitInput.value);
+    const ocoStop = parseFloat(elements.orderOcoStopInput.value);
+    if (!ocoLimit || ocoLimit <= 0) {
+      elements.orderErrorMsg.textContent = 'Valid Take-Profit limit price required for OCO';
+      return;
+    }
+    if (!ocoStop || ocoStop <= 0) {
+      elements.orderErrorMsg.textContent = 'Valid Stop-Loss trigger price required for OCO';
+      return;
+    }
+
+    elements.submitOrderBtn.disabled = true;
+    elements.submitOrderBtn.textContent = 'ROUTING OCO...';
+
+    socket.emit('order:placeOco', {
+      limitOrder: {
+        symbol: state.selectedSymbol,
+        side: state.orderSide,
+        type: 'LIMIT',
+        price: ocoLimit,
+        quantity,
+        leverage: state.leverage || 1
+      },
+      stopOrder: {
+        symbol: state.selectedSymbol,
+        side: state.orderSide,
+        type: 'STOP_LOSS',
+        stopPrice: ocoStop,
+        quantity,
+        leverage: state.leverage || 1
+      }
+    }, (response) => {
+      elements.submitOrderBtn.disabled = false;
+      elements.submitOrderBtn.textContent = `PLACE OCO BRKT ${state.orderSide}`;
+      if (!response.success) {
+        elements.orderErrorMsg.textContent = response.error || 'OCO order rejected';
+      } else {
+        elements.orderErrorMsg.textContent = '';
+      }
+    });
+    return;
+  }
+
+  // Standard or Conditional Orders
   const price = (state.orderType === 'LIMIT' || state.orderType === 'STOP_LIMIT')
     ? parseFloat(elements.orderPriceInput.value)
     : comp.price;
@@ -1158,12 +1358,9 @@ elements.orderForm.addEventListener('submit', (e) => {
     ? parseFloat(elements.orderStopPriceInput.value)
     : undefined;
 
-  const quantity = parseInt(elements.orderQtyInput.value, 10);
-
-  if (!quantity || quantity <= 0) {
-    elements.orderErrorMsg.textContent = 'Invalid quantity';
-    return;
-  }
+  const trailingDelta = (state.orderType === 'TRAILING_STOP')
+    ? (parseFloat(elements.orderTrailingDeltaInput.value) || 5.0)
+    : undefined;
 
   if ((state.orderType === 'LIMIT' || state.orderType === 'STOP_LIMIT') && (!price || price <= 0)) {
     elements.orderErrorMsg.textContent = 'Valid limit price required';
@@ -1172,6 +1369,11 @@ elements.orderForm.addEventListener('submit', (e) => {
 
   if ((state.orderType === 'STOP_LOSS' || state.orderType === 'STOP_LIMIT') && (!stopPrice || stopPrice <= 0)) {
     elements.orderErrorMsg.textContent = 'Valid stop trigger price required';
+    return;
+  }
+
+  if (state.orderType === 'TRAILING_STOP' && (!trailingDelta || trailingDelta <= 0)) {
+    elements.orderErrorMsg.textContent = 'Valid trailing delta distance required';
     return;
   }
 
@@ -1186,6 +1388,8 @@ elements.orderForm.addEventListener('submit', (e) => {
     type: state.orderType,
     price,
     stopPrice,
+    trailingDelta,
+    leverage: state.leverage || 1,
     quantity
   }, (response) => {
     elements.submitOrderBtn.disabled = false;
@@ -1484,8 +1688,24 @@ socket.on('market:daySummary', (summaryData) => {
   renderDaySummary(summaryData);
 });
 
-socket.on('market:newDay', () => {
-  elements.daySummaryModal.classList.add('hidden');
+socket.on('margin:liquidation', ({ liquidations }) => {
+  showAchievementToast({
+    id: 'LIQUIDATION_ALERT',
+    title: 'Margin Call Liquidation',
+    description: `Equity breached maintenance margin. Liquidated ${liquidations ? liquidations.length : 1} position(s).`,
+    rewardCredits: 0,
+    icon: '⚠️'
+  });
+});
+
+socket.on('order:ocoCancelled', ({ symbol, ocoGroupId, cancelledOrderId }) => {
+  showStopTriggerToast({
+    id: cancelledOrderId,
+    symbol,
+    type: 'OCO_CANCELLED',
+    side: 'CANCEL',
+    price: 0
+  });
 });
 
 // App Startup

@@ -167,7 +167,9 @@ export class AccountManager {
         initialCapital: startCapital,
         credits: startCapital,
         lockedCredits: 0,
-        holdings: new Map(), // symbol -> { quantity: number, avgPrice: number, lockedQty: number }
+        marginLoan: 0,
+        leverage: 1,
+        holdings: new Map(), // symbol -> { quantity: number, avgPrice: number, lockedQty: number, shortQuantity: number, shortAvgPrice: number, lockedShortQty: number }
         tradeHistory: [], // array of executed trades for this account
         achievements: new Set(),
         dayStartNetWorth: startCapital,
@@ -190,12 +192,24 @@ export class AccountManager {
     return this.accounts.get(userId) || null;
   }
 
-  canAffordBuy(userId, price, quantity) {
+  canAffordBuy(userId, price, quantity, leverage = 1) {
     const user = this.accounts.get(userId);
     if (!user) return false;
     const required = price * quantity;
+    const effLeverage = Math.min(5, Math.max(1, Number(leverage) || user.leverage || 1));
+    const initialMarginRequired = +(required / effLeverage).toFixed(2);
     const available = user.credits - user.lockedCredits;
-    return available >= required;
+    return available >= initialMarginRequired;
+  }
+
+  canAffordShort(userId, price, quantity, leverage = 1) {
+    const user = this.accounts.get(userId);
+    if (!user) return false;
+    const required = price * quantity;
+    const effLeverage = Math.min(5, Math.max(1, Number(leverage) || user.leverage || 1));
+    const initialMarginRequired = +(required / effLeverage).toFixed(2);
+    const available = user.credits - user.lockedCredits;
+    return available >= initialMarginRequired;
   }
 
   lockCredits(userId, amount) {
@@ -217,22 +231,25 @@ export class AccountManager {
     if (!user) return false;
     const holding = user.holdings.get(symbol);
     if (!holding) return false;
-    const availableShares = holding.quantity - (holding.lockedQty || 0);
+    const availableShares = (holding.quantity || 0) - (holding.lockedQty || 0);
     return availableShares >= quantity;
   }
 
   getSellAvailability(userId, symbol) {
     const user = this.accounts.get(userId);
-    if (!user) return { hasHolding: false, totalShares: 0, availableShares: 0, lockedShares: 0 };
+    if (!user) return { hasHolding: false, totalShares: 0, availableShares: 0, lockedShares: 0, shortShares: 0 };
     const holding = user.holdings.get(symbol);
-    if (!holding || holding.quantity <= 0) return { hasHolding: false, totalShares: 0, availableShares: 0, lockedShares: 0 };
+    if (!holding) return { hasHolding: false, totalShares: 0, availableShares: 0, lockedShares: 0, shortShares: 0 };
+    const totalShares = holding.quantity || 0;
     const lockedShares = holding.lockedQty || 0;
-    const availableShares = holding.quantity - lockedShares;
+    const availableShares = Math.max(0, totalShares - lockedShares);
+    const shortShares = holding.shortQuantity || 0;
     return {
-      hasHolding: true,
-      totalShares: holding.quantity,
+      hasHolding: totalShares > 0 || shortShares > 0,
+      totalShares,
       availableShares,
-      lockedShares
+      lockedShares,
+      shortShares
     };
   }
 
@@ -255,7 +272,7 @@ export class AccountManager {
   }
 
   /**
-   * Settle an executed trade between buyer and seller
+   * Settle an executed trade between buyer and seller with full margin and short accounting
    * @param {Object} trade
    * @param {boolean} buyerWasMaker - whether buyer had a resting limit order
    * @param {boolean} sellerWasMaker - whether seller had a resting limit order
@@ -265,37 +282,78 @@ export class AccountManager {
     const seller = this.getOrCreateUser(trade.sellerId, trade.sellerName);
     const totalValue = +(trade.price * trade.quantity).toFixed(2);
 
-    // Update Buyer
-    buyer.credits = +(buyer.credits - totalValue).toFixed(2);
-    if (buyerWasMaker) {
-      // Unlock reserved limit funds
-      buyer.lockedCredits = Math.max(0, +(buyer.lockedCredits - totalValue).toFixed(2));
+    // --- Settle Buyer ---
+    let buyerHolding = buyer.holdings.get(trade.symbol);
+    if (!buyerHolding) {
+      buyerHolding = { quantity: 0, avgPrice: 0, lockedQty: 0, shortQuantity: 0, shortAvgPrice: 0, lockedShortQty: 0 };
+      buyer.holdings.set(trade.symbol, buyerHolding);
     }
+
+    let buyerRealizedPnL = 0;
+    let buyerSide = 'BUY';
+
+    // Check if buyer is covering a short position
+    if (buyerHolding.shortQuantity > 0) {
+      const coverQty = Math.min(trade.quantity, buyerHolding.shortQuantity);
+      const coverCost = +(trade.price * coverQty).toFixed(2);
+      const shortBasis = +(buyerHolding.shortAvgPrice * coverQty).toFixed(2);
+      const coverPnL = +(shortBasis - coverCost).toFixed(2); // profit if short entry price > cover price
+
+      buyer.realizedPnL = +(buyer.realizedPnL + coverPnL).toFixed(2);
+      buyerRealizedPnL = coverPnL;
+      buyer.credits = +(buyer.credits - coverCost).toFixed(2);
+      buyerHolding.shortQuantity -= coverQty;
+      if (buyerHolding.shortQuantity === 0) {
+        buyerHolding.shortAvgPrice = 0;
+        buyerHolding.lockedShortQty = 0;
+      }
+      buyerSide = 'BUY_TO_COVER';
+
+      // If buy quantity exceeds short quantity, remaining quantity turns into long shares
+      const remainingBuyQty = trade.quantity - coverQty;
+      if (remainingBuyQty > 0) {
+        const remCost = +(trade.price * remainingBuyQty).toFixed(2);
+        buyer.credits = +(buyer.credits - remCost).toFixed(2);
+        const newBuyerQty = buyerHolding.quantity + remainingBuyQty;
+        const prevCost = buyerHolding.quantity * buyerHolding.avgPrice;
+        buyerHolding.avgPrice = +((prevCost + remCost) / newBuyerQty).toFixed(2);
+        buyerHolding.quantity = newBuyerQty;
+      }
+    } else {
+      // Standard Long Buy
+      const buyerLev = Math.min(5, Math.max(1, Number(trade.buyerLeverage) || buyer.leverage || 1));
+      const marginRequired = +(totalValue / buyerLev).toFixed(2);
+      const borrowed = +(totalValue - marginRequired).toFixed(2);
+
+      buyer.credits = +(buyer.credits - marginRequired).toFixed(2);
+      if (borrowed > 0) {
+        buyer.marginLoan = +((buyer.marginLoan || 0) + borrowed).toFixed(2);
+      }
+      if (buyerWasMaker) {
+        buyer.lockedCredits = Math.max(0, +(buyer.lockedCredits - marginRequired).toFixed(2));
+      }
+
+      const newBuyerQty = buyerHolding.quantity + trade.quantity;
+      const prevBuyerCost = buyerHolding.quantity * buyerHolding.avgPrice;
+      buyerHolding.avgPrice = +((prevBuyerCost + totalValue) / newBuyerQty).toFixed(2);
+      buyerHolding.quantity = newBuyerQty;
+    }
+
     buyer.tradesCount++;
     buyer.tradesToday = (buyer.tradesToday || 0) + 1;
     buyer.volumeTraded = +(buyer.volumeTraded + totalValue).toFixed(2);
     buyer.volumeToday = +((buyer.volumeToday || 0) + totalValue).toFixed(2);
 
-    let buyerHolding = buyer.holdings.get(trade.symbol);
-    if (!buyerHolding) {
-      buyerHolding = { quantity: 0, avgPrice: 0, lockedQty: 0 };
-      buyer.holdings.set(trade.symbol, buyerHolding);
-    }
-    const newBuyerQty = buyerHolding.quantity + trade.quantity;
-    const prevBuyerCost = buyerHolding.quantity * buyerHolding.avgPrice;
-    buyerHolding.avgPrice = +((prevBuyerCost + totalValue) / newBuyerQty).toFixed(2);
-    buyerHolding.quantity = newBuyerQty;
-
-    // Record buyer trade history
     if (!buyer.tradeHistory) buyer.tradeHistory = [];
     const buyerTrade = {
       id: trade.id,
       symbol: trade.symbol,
-      side: 'BUY',
+      side: buyerSide,
       price: trade.price,
       quantity: trade.quantity,
       totalValue,
       role: buyerWasMaker ? 'MAKER' : 'TAKER',
+      realizedPnL: buyerSide === 'BUY_TO_COVER' ? buyerRealizedPnL : undefined,
       counterparty: trade.sellerName,
       timestamp: trade.timestamp || Date.now()
     };
@@ -307,43 +365,81 @@ export class AccountManager {
       this._recordTrade(buyer.id, buyerTrade);
     }
 
-    // Update Seller
-    seller.credits = +(seller.credits + totalValue).toFixed(2);
-    seller.tradesCount++;
-    seller.tradesToday = (seller.tradesToday || 0) + 1;
-    seller.volumeTraded = +(seller.volumeTraded + totalValue).toFixed(2);
-    seller.volumeToday = +((seller.volumeToday || 0) + totalValue).toFixed(2);
+    // --- Settle Seller ---
+    let sellerHolding = seller.holdings.get(trade.symbol);
+    if (!sellerHolding) {
+      sellerHolding = { quantity: 0, avgPrice: 0, lockedQty: 0, shortQuantity: 0, shortAvgPrice: 0, lockedShortQty: 0 };
+      seller.holdings.set(trade.symbol, sellerHolding);
+    }
 
-    let profit = 0;
-    const sellerHolding = seller.holdings.get(trade.symbol);
-    if (sellerHolding) {
-      if (sellerWasMaker) {
-        sellerHolding.lockedQty = Math.max(0, (sellerHolding.lockedQty || 0) - trade.quantity);
-      }
-      // Calculate realized P&L
-      const costBasis = sellerHolding.avgPrice * trade.quantity;
-      profit = +(totalValue - costBasis).toFixed(2);
+    let sellerRealizedPnL = 0;
+    let sellerSide = 'SELL';
+
+    const longSharesOwned = sellerHolding.quantity || 0;
+    if (longSharesOwned > 0) {
+      const sellLongQty = Math.min(trade.quantity, longSharesOwned);
+      const sellLongVal = +(trade.price * sellLongQty).toFixed(2);
+      const costBasis = +(sellerHolding.avgPrice * sellLongQty).toFixed(2);
+      const profit = +(sellLongVal - costBasis).toFixed(2);
       seller.realizedPnL = +(seller.realizedPnL + profit).toFixed(2);
+      sellerRealizedPnL = profit;
 
-      sellerHolding.quantity -= trade.quantity;
+      sellerHolding.quantity -= sellLongQty;
       if (sellerHolding.quantity <= 0) {
         sellerHolding.quantity = 0;
         sellerHolding.avgPrice = 0;
         sellerHolding.lockedQty = 0;
       }
+      if (sellerWasMaker) {
+        sellerHolding.lockedQty = Math.max(0, (sellerHolding.lockedQty || 0) - sellLongQty);
+      }
+
+      // Repay any outstanding margin loan first from sale proceeds
+      if (seller.marginLoan && seller.marginLoan > 0) {
+        const loanPayoff = Math.min(seller.marginLoan, sellLongVal);
+        seller.marginLoan = Math.max(0, +(seller.marginLoan - loanPayoff).toFixed(2));
+        const remCash = +(sellLongVal - loanPayoff).toFixed(2);
+        seller.credits = +(seller.credits + remCash).toFixed(2);
+      } else {
+        seller.credits = +(seller.credits + sellLongVal).toFixed(2);
+      }
+
+      // If order sold more than available long shares, excess is short sell
+      const excessShortQty = trade.quantity - sellLongQty;
+      if (excessShortQty > 0) {
+        const shortVal = +(trade.price * excessShortQty).toFixed(2);
+        seller.credits = +(seller.credits + shortVal).toFixed(2);
+        const newShortQty = (sellerHolding.shortQuantity || 0) + excessShortQty;
+        const prevShortVal = (sellerHolding.shortQuantity || 0) * (sellerHolding.shortAvgPrice || 0);
+        sellerHolding.shortAvgPrice = +((prevShortVal + shortVal) / newShortQty).toFixed(2);
+        sellerHolding.shortQuantity = newShortQty;
+        sellerSide = 'SHORT_SELL';
+      }
+    } else {
+      // Pure Short Sell
+      sellerSide = 'SHORT_SELL';
+      seller.credits = +(seller.credits + totalValue).toFixed(2);
+      const newShortQty = (sellerHolding.shortQuantity || 0) + trade.quantity;
+      const prevShortVal = (sellerHolding.shortQuantity || 0) * (sellerHolding.shortAvgPrice || 0);
+      sellerHolding.shortAvgPrice = +((prevShortVal + totalValue) / newShortQty).toFixed(2);
+      sellerHolding.shortQuantity = newShortQty;
     }
 
-    // Record seller trade history
+    seller.tradesCount++;
+    seller.tradesToday = (seller.tradesToday || 0) + 1;
+    seller.volumeTraded = +(seller.volumeTraded + totalValue).toFixed(2);
+    seller.volumeToday = +((seller.volumeToday || 0) + totalValue).toFixed(2);
+
     if (!seller.tradeHistory) seller.tradeHistory = [];
     const sellerTrade = {
       id: trade.id,
       symbol: trade.symbol,
-      side: 'SELL',
+      side: sellerSide,
       price: trade.price,
       quantity: trade.quantity,
       totalValue,
       role: sellerWasMaker ? 'MAKER' : 'TAKER',
-      realizedPnL: profit,
+      realizedPnL: sellerSide === 'SELL' ? sellerRealizedPnL : undefined,
       counterparty: trade.buyerName,
       timestamp: trade.timestamp || Date.now()
     };
@@ -361,43 +457,82 @@ export class AccountManager {
     return user ? (user.tradeHistory || []) : [];
   }
 
-  getPortfolio(userId, currentPrices) {
+  getPortfolio(userId, currentPrices = {}) {
     const user = this.getUser(userId);
     if (!user) return null;
 
-    let stockValue = 0;
+    let longStockValue = 0;
+    let shortStockLiability = 0;
     let totalUnrealizedPnL = 0;
     const holdingsList = [];
 
     for (const [symbol, h] of user.holdings.entries()) {
-      if (h.quantity <= 0) continue;
-      const curPrice = currentPrices[symbol] || h.avgPrice;
-      const curVal = +(h.quantity * curPrice).toFixed(2);
-      const cost = +(h.quantity * h.avgPrice).toFixed(2);
-      const unrlPnL = +(curVal - cost).toFixed(2);
-      const pnlPct = cost > 0 ? +((unrlPnL / cost) * 100).toFixed(2) : 0;
+      const curPrice = currentPrices[symbol] || h.avgPrice || h.shortAvgPrice || 100;
 
-      stockValue += curVal;
-      totalUnrealizedPnL += unrlPnL;
+      // Long position
+      if (h.quantity && h.quantity > 0) {
+        const curVal = +(h.quantity * curPrice).toFixed(2);
+        const cost = +(h.quantity * h.avgPrice).toFixed(2);
+        const unrlPnL = +(curVal - cost).toFixed(2);
+        const pnlPct = cost > 0 ? +((unrlPnL / cost) * 100).toFixed(2) : 0;
 
-      holdingsList.push({
-        symbol,
-        quantity: h.quantity,
-        lockedQty: h.lockedQty || 0,
-        availableQty: h.quantity - (h.lockedQty || 0),
-        avgPrice: h.avgPrice,
-        currentPrice: curPrice,
-        currentValue: curVal,
-        unrealizedPnL: unrlPnL,
-        pnlPercent: pnlPct
-      });
+        longStockValue += curVal;
+        totalUnrealizedPnL += unrlPnL;
+
+        holdingsList.push({
+          symbol,
+          positionType: 'LONG',
+          side: 'LONG',
+          quantity: h.quantity,
+          lockedQty: h.lockedQty || 0,
+          availableQty: Math.max(0, h.quantity - (h.lockedQty || 0)),
+          avgPrice: h.avgPrice,
+          currentPrice: curPrice,
+          currentValue: curVal,
+          unrealizedPnL: unrlPnL,
+          pnlPercent: pnlPct
+        });
+      }
+
+      // Short position
+      if (h.shortQuantity && h.shortQuantity > 0) {
+        const liability = +(h.shortQuantity * curPrice).toFixed(2);
+        const entryVal = +(h.shortQuantity * h.shortAvgPrice).toFixed(2);
+        const unrlPnL = +(entryVal - liability).toFixed(2); // Short gains when price drops
+        const pnlPct = entryVal > 0 ? +((unrlPnL / entryVal) * 100).toFixed(2) : 0;
+
+        shortStockLiability += liability;
+        totalUnrealizedPnL += unrlPnL;
+
+        holdingsList.push({
+          symbol,
+          positionType: 'SHORT',
+          side: 'SHORT',
+          quantity: h.shortQuantity,
+          lockedQty: h.lockedShortQty || 0,
+          availableQty: Math.max(0, h.shortQuantity - (h.lockedShortQty || 0)),
+          avgPrice: h.shortAvgPrice,
+          currentPrice: curPrice,
+          currentValue: -liability,
+          unrealizedPnL: unrlPnL,
+          pnlPercent: pnlPct
+        });
+      }
     }
 
     const availableCredits = +(user.credits - user.lockedCredits).toFixed(2);
-    const totalNetWorth = +(user.credits + stockValue).toFixed(2);
+    const marginLoan = +(user.marginLoan || 0).toFixed(2);
+    // Net worth / Equity = Cash + Long Value - Short Liability - Margin Loan
+    const totalNetWorth = +(user.credits + longStockValue - shortStockLiability - marginLoan).toFixed(2);
     const baseCapital = user.initialCapital || this.initialCredits;
     const totalPnL = +(totalNetWorth - baseCapital).toFixed(2);
     const totalPnLPercent = baseCapital > 0 ? +((totalPnL / baseCapital) * 100).toFixed(2) : 0;
+
+    // Maintenance Margin: 25% of Longs + 30% of Shorts
+    const maintenanceMargin = +((longStockValue * 0.25) + (shortStockLiability * 0.30)).toFixed(2);
+    const hasMarginPositions = longStockValue > 0 || shortStockLiability > 0 || marginLoan > 0;
+    const isMarginCall = hasMarginPositions && totalNetWorth < maintenanceMargin;
+    const marginLevel = maintenanceMargin > 0 ? +((totalNetWorth / maintenanceMargin) * 100).toFixed(1) : 999;
 
     const unlockedAchievements = Array.from(user.achievements || []).map(id => ACHIEVEMENTS_CONFIG[id]).filter(Boolean);
     const allAchievements = Object.values(ACHIEVEMENTS_CONFIG).map(a => ({
@@ -411,7 +546,14 @@ export class AccountManager {
       credits: user.credits,
       availableCredits,
       lockedCredits: user.lockedCredits,
-      stockValue: +stockValue.toFixed(2),
+      marginLoan,
+      leverage: user.leverage || 1,
+      stockValue: +longStockValue.toFixed(2),
+      shortLiability: +shortStockLiability.toFixed(2),
+      equity: totalNetWorth,
+      maintenanceMargin,
+      marginLevel,
+      isMarginCall,
       totalNetWorth,
       totalPnL,
       totalPnLPercent,
@@ -423,6 +565,22 @@ export class AccountManager {
       tradeHistory: user.tradeHistory || [],
       achievements: unlockedAchievements,
       allAchievements
+    };
+  }
+
+  getMarginStatus(userId, currentPrices = {}) {
+    const p = this.getPortfolio(userId, currentPrices);
+    if (!p) return null;
+    return {
+      userId: p.userId,
+      credits: p.credits,
+      equity: p.equity,
+      marginLoan: p.marginLoan,
+      stockValue: p.stockValue,
+      shortLiability: p.shortLiability,
+      maintenanceMargin: p.maintenanceMargin,
+      marginLevel: p.marginLevel,
+      isMarginCall: p.isMarginCall
     };
   }
 

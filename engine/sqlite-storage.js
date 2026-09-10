@@ -47,7 +47,9 @@ export class SQLiteStorageManager {
         realized_pnl REAL NOT NULL DEFAULT 0,
         trades_count INTEGER NOT NULL DEFAULT 0,
         volume_traded REAL NOT NULL DEFAULT 0,
-        created_at INTEGER NOT NULL
+        created_at INTEGER NOT NULL,
+        margin_loan REAL NOT NULL DEFAULT 0,
+        leverage INTEGER NOT NULL DEFAULT 1
       );
 
       CREATE TABLE IF NOT EXISTS holdings (
@@ -56,6 +58,9 @@ export class SQLiteStorageManager {
         quantity INTEGER NOT NULL,
         avg_price REAL NOT NULL,
         locked_qty INTEGER NOT NULL DEFAULT 0,
+        short_quantity INTEGER NOT NULL DEFAULT 0,
+        short_avg_price REAL NOT NULL DEFAULT 0,
+        locked_short_qty INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (user_id, symbol),
         FOREIGN KEY (user_id) REFERENCES accounts(id) ON DELETE CASCADE
       );
@@ -88,6 +93,13 @@ export class SQLiteStorageManager {
       CREATE INDEX IF NOT EXISTS idx_holdings_user ON holdings(user_id);
       CREATE INDEX IF NOT EXISTS idx_achievements_user ON achievements(user_id);
     `);
+
+    // Dynamic column migrations for backward compatibility
+    try { this.db.exec(`ALTER TABLE accounts ADD COLUMN margin_loan REAL NOT NULL DEFAULT 0;`); } catch (_) {}
+    try { this.db.exec(`ALTER TABLE accounts ADD COLUMN leverage INTEGER NOT NULL DEFAULT 1;`); } catch (_) {}
+    try { this.db.exec(`ALTER TABLE holdings ADD COLUMN short_quantity INTEGER NOT NULL DEFAULT 0;`); } catch (_) {}
+    try { this.db.exec(`ALTER TABLE holdings ADD COLUMN short_avg_price REAL NOT NULL DEFAULT 0;`); } catch (_) {}
+    try { this.db.exec(`ALTER TABLE holdings ADD COLUMN locked_short_qty INTEGER NOT NULL DEFAULT 0;`); } catch (_) {}
   }
 
   /**
@@ -97,10 +109,17 @@ export class SQLiteStorageManager {
   loadAllAccounts() {
     try {
       const getAccountsStmt = this.db.prepare(`
-        SELECT * FROM accounts WHERE is_npc = 0
+        SELECT id, name, is_npc, initial_capital, credits, locked_credits, realized_pnl, trades_count, volume_traded, created_at,
+               COALESCE(margin_loan, 0) as margin_loan,
+               COALESCE(leverage, 1) as leverage
+        FROM accounts WHERE is_npc = 0
       `);
       const getHoldingsStmt = this.db.prepare(`
-        SELECT symbol, quantity, avg_price, locked_qty FROM holdings WHERE user_id = ?
+        SELECT symbol, quantity, avg_price, locked_qty,
+               COALESCE(short_quantity, 0) as short_quantity,
+               COALESCE(short_avg_price, 0) as short_avg_price,
+               COALESCE(locked_short_qty, 0) as locked_short_qty
+        FROM holdings WHERE user_id = ?
       `);
       const getTradesStmt = this.db.prepare(`
         SELECT trade_id, symbol, side, role, price, quantity, total_value, realized_pnl, counterparty, timestamp
@@ -120,7 +139,10 @@ export class SQLiteStorageManager {
           holdingsMap.set(h.symbol, {
             quantity: h.quantity,
             avgPrice: h.avg_price,
-            lockedQty: 0 // Reset locked qty on reboot
+            lockedQty: 0,
+            shortQuantity: h.short_quantity || 0,
+            shortAvgPrice: h.short_avg_price || 0,
+            lockedShortQty: 0
           });
         }
 
@@ -146,7 +168,9 @@ export class SQLiteStorageManager {
           isNpc: false,
           initialCapital: row.initial_capital,
           credits: row.credits,
-          lockedCredits: 0, // Reset locked credits on reboot
+          lockedCredits: 0,
+          marginLoan: row.margin_loan || 0,
+          leverage: row.leverage || 1,
           holdings: holdingsMap,
           tradeHistory,
           achievements: new Set(achievementsList),
@@ -173,15 +197,17 @@ export class SQLiteStorageManager {
 
     try {
       const upsertAccount = this.db.prepare(`
-        INSERT INTO accounts (id, name, is_npc, initial_capital, credits, locked_credits, realized_pnl, trades_count, volume_traded, created_at)
-        VALUES (?, ?, 0, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO accounts (id, name, is_npc, initial_capital, credits, locked_credits, realized_pnl, trades_count, volume_traded, created_at, margin_loan, leverage)
+        VALUES (?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           name = excluded.name,
           credits = excluded.credits,
           locked_credits = excluded.locked_credits,
           realized_pnl = excluded.realized_pnl,
           trades_count = excluded.trades_count,
-          volume_traded = excluded.volume_traded
+          volume_traded = excluded.volume_traded,
+          margin_loan = excluded.margin_loan,
+          leverage = excluded.leverage
       `);
 
       upsertAccount.run(
@@ -193,7 +219,9 @@ export class SQLiteStorageManager {
         account.realizedPnL || 0,
         account.tradesCount || 0,
         account.volumeTraded || 0,
-        account.createdAt || Date.now()
+        account.createdAt || Date.now(),
+        account.marginLoan || 0,
+        account.leverage || 1
       );
 
       // Update holdings
@@ -201,13 +229,22 @@ export class SQLiteStorageManager {
       deleteHoldings.run(account.id);
 
       const insertHolding = this.db.prepare(`
-        INSERT INTO holdings (user_id, symbol, quantity, avg_price, locked_qty)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO holdings (user_id, symbol, quantity, avg_price, locked_qty, short_quantity, short_avg_price, locked_short_qty)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       for (const [symbol, h] of account.holdings.entries()) {
-        if (h.quantity > 0) {
-          insertHolding.run(account.id, symbol, h.quantity, h.avgPrice, h.lockedQty || 0);
+        if ((h.quantity && h.quantity > 0) || (h.shortQuantity && h.shortQuantity > 0)) {
+          insertHolding.run(
+            account.id,
+            symbol,
+            h.quantity || 0,
+            h.avgPrice || 0,
+            h.lockedQty || 0,
+            h.shortQuantity || 0,
+            h.shortAvgPrice || 0,
+            h.lockedShortQty || 0
+          );
         }
       }
     } catch (err) {

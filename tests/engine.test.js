@@ -299,4 +299,219 @@ assert.strictEqual(dayUser.volumeToday, 0);
 assert.strictEqual(dayUser.dayStartNetWorth, 105000);
 console.log('[PASS] Multi-Day recap calculations and clean Day rollover verified');
 
-console.log('\n[SUCCESS] ALL CORE ENGINE & TIER 2 TESTS PASSED!\n');
+// Test 11: Trailing Stop Dynamic Ratcheting & Execution
+console.log('\nTest 11: Trailing Stop Dynamic Ratcheting & Execution');
+const trailBook = new OrderBook('BYTE');
+const trailOrder = trailBook.addStopOrder({
+  id: 'ord_trail_1',
+  userId: 'trail_trader',
+  userName: 'Trail Guy',
+  symbol: 'BYTE',
+  side: 'SELL',
+  type: 'TRAILING_STOP',
+  trailingDelta: 5.0,
+  currentMarketPrice: 100,
+  quantity: 10
+});
+
+assert.strictEqual(trailOrder.peakPrice, 100);
+assert.strictEqual(trailOrder.stopPrice, 95);
+
+// Price rises to 106 -> peak becomes 106, stop ratchets to 101
+let triggered = trailBook.checkStopOrders(106);
+assert.strictEqual(triggered.length, 0);
+assert.strictEqual(trailOrder.peakPrice, 106);
+assert.strictEqual(trailOrder.stopPrice, 101);
+
+// Price rises to 112 -> peak becomes 112, stop ratchets to 107
+triggered = trailBook.checkStopOrders(112);
+assert.strictEqual(triggered.length, 0);
+assert.strictEqual(trailOrder.peakPrice, 112);
+assert.strictEqual(trailOrder.stopPrice, 107);
+
+// Price drops to 108 -> no ratchet, no trigger (108 > 107)
+triggered = trailBook.checkStopOrders(108);
+assert.strictEqual(triggered.length, 0);
+assert.strictEqual(trailOrder.stopPrice, 107);
+
+// Price drops to 106.50 (<= 107) -> triggers!
+triggered = trailBook.checkStopOrders(106.50);
+assert.strictEqual(triggered.length, 1);
+assert.strictEqual(triggered[0].id, 'ord_trail_1');
+console.log('[PASS] Trailing Stop successfully ratcheted upward and triggered on reversal');
+
+// Test 12: OCO (One-Cancels-the-Other) Bracket Orders
+console.log('\nTest 12: OCO Bracket Order Mutual Cancellation');
+const ocoClock = new MarketClock();
+ocoClock.phase = 'REGULAR_HOURS';
+const ocoAccts = new AccountManager(100000);
+const ocoEngine = new MatchingEngine(['BYTE'], ocoAccts, ocoClock);
+
+const ocoUser = ocoAccts.getOrCreateUser('oco_trader', 'OCO Trader');
+ocoUser.holdings.set('BYTE', { quantity: 20, avgPrice: 100, lockedQty: 0 });
+
+const ocoRes = ocoEngine.submitOcoOrder(
+  { userId: 'oco_trader', userName: 'OCO Trader', symbol: 'BYTE', side: 'SELL', type: 'LIMIT', price: 120, quantity: 10 },
+  { userId: 'oco_trader', userName: 'OCO Trader', symbol: 'BYTE', side: 'SELL', type: 'STOP_LOSS', stopPrice: 85, quantity: 10 }
+);
+
+assert.strictEqual(ocoRes.success, true);
+assert.strictEqual(typeof ocoRes.ocoGroupId, 'string');
+const ocoBook = ocoEngine.books.get('BYTE');
+assert.strictEqual(ocoBook.orders.has(ocoRes.limitOrder.id), true);
+assert.strictEqual(ocoBook.stopOrders.has(ocoRes.stopOrder.id), true);
+
+// Execute a buyer against the Take-Profit limit leg at 120
+const buyerBot = ocoAccts.getOrCreateUser('bot_buyer', 'Buyer Bot', true);
+buyerBot.credits = 100000;
+ocoEngine.submitOrder({
+  userId: 'bot_buyer',
+  userName: 'Buyer Bot',
+  symbol: 'BYTE',
+  side: 'BUY',
+  type: 'MARKET',
+  quantity: 10
+});
+
+// Limit leg filled, stop leg must be automatically cancelled from the stop queue
+assert.strictEqual(ocoBook.stopOrders.has(ocoRes.stopOrder.id), false, 'Counterpart stop order should be cancelled');
+console.log('[PASS] OCO mutual cancellation: Limit execution cancelled resting Stop leg');
+
+// Test 13: Short Selling & Buy to Cover
+console.log('\nTest 13: Short Selling & Buy to Cover with Realized P&L');
+const shortAccts = new AccountManager(100000);
+const shortUser = shortAccts.getOrCreateUser('short_seller', 'Bearish Quant');
+const buyerUser = shortAccts.getOrCreateUser('bull_buyer', 'Bullish Buyer');
+
+// Settle a short sale: short_seller sells 10 shares of SOLR at 200 with 0 shares owned
+const shortTrade = {
+  id: 'tr_short_1',
+  symbol: 'SOLR',
+  price: 200,
+  quantity: 10,
+  buyerId: 'bull_buyer',
+  buyerName: 'Bullish Buyer',
+  sellerId: 'short_seller',
+  sellerName: 'Bearish Quant',
+  takerSide: 'SELL',
+  sellerLeverage: 2
+};
+shortAccts.settleTrade(shortTrade, false, false);
+
+const shortHolding = shortUser.holdings.get('SOLR');
+assert.strictEqual(shortHolding.shortQuantity, 10);
+assert.strictEqual(shortHolding.shortAvgPrice, 200);
+assert.strictEqual(shortUser.credits, 102000); // 100,000 + (200 * 10)
+
+// Price drops to 160. Bearish Quant buys 10 shares to cover the short!
+const coverTrade = {
+  id: 'tr_cover_1',
+  symbol: 'SOLR',
+  price: 160,
+  quantity: 10,
+  buyerId: 'short_seller',
+  buyerName: 'Bearish Quant',
+  sellerId: 'bull_buyer',
+  sellerName: 'Bullish Buyer',
+  takerSide: 'BUY'
+};
+shortAccts.settleTrade(coverTrade, false, false);
+
+assert.strictEqual(shortHolding.shortQuantity, 0);
+// Realized profit: (200 - 160) * 10 = +400 CR
+assert.strictEqual(shortUser.realizedPnL, 400);
+assert.strictEqual(shortUser.credits, 100400);
+console.log('[PASS] Short selling and Buy-to-Cover settled with accurate P&L accounting');
+
+// Test 14: Margin Borrowing, Maintenance Margin, & Liquidation
+console.log('\nTest 14: Margin Borrowing, Maintenance Margin, & Liquidation');
+const marginClock = new MarketClock();
+marginClock.phase = 'REGULAR_HOURS';
+const marginAccts = new AccountManager(10000);
+const marginEngine = new MatchingEngine(['SOLR'], marginAccts, marginClock);
+
+const mUser = marginAccts.getOrCreateUser('margin_trader', 'Leveraged Trader');
+// Buy with 5x leverage: 100 shares @ 200 = 20,000 CR total value
+// 5x requires 4,000 CR initial margin, remaining 16,000 is margin loan
+const marginTrade = {
+  id: 'tr_margin_1',
+  symbol: 'SOLR',
+  price: 200,
+  quantity: 100,
+  buyerId: 'margin_trader',
+  buyerName: 'Leveraged Trader',
+  sellerId: 'bot_seller',
+  sellerName: 'Bot Seller',
+  takerSide: 'BUY',
+  buyerLeverage: 5
+};
+marginAccts.settleTrade(marginTrade, false, false);
+
+assert.strictEqual(mUser.credits, 6000); // 10,000 - 4,000
+assert.strictEqual(mUser.marginLoan, 16000);
+
+// Check equity at initial price: 6,000 cash + 20,000 stock - 16,000 loan = 10,000 equity
+const statusInitial = marginAccts.getMarginStatus('margin_trader', { SOLR: 200 });
+assert.strictEqual(statusInitial.equity, 10000);
+assert.strictEqual(statusInitial.maintenanceMargin, 5000); // 25% of 20,000
+assert.strictEqual(statusInitial.isMarginCall, false);
+
+// Price crashes to 150: Stock value = 15,000. Equity = 6,000 + 15,000 - 16,000 = 5,000.
+// Maintenance Margin = 25% of 15,000 = 3,750 (still safe).
+// Price crashes to 130: Stock value = 13,000. Equity = 6,000 + 13,000 - 16,000 = 3,000.
+// Maintenance Margin = 25% of 13,000 = 3,250. Equity (3,000) < Maintenance Margin (3,250) -> MARGIN CALL!
+const statusCrash = marginAccts.getMarginStatus('margin_trader', { SOLR: 130 });
+assert.strictEqual(statusCrash.isMarginCall, true);
+
+// Seed liquidity for liquidation execution
+const liqBook = marginEngine.books.get('SOLR');
+liqBook.processOrder({
+  id: 'bid_liq',
+  userId: 'bot_liquidity',
+  userName: 'Liquidity Provider',
+  symbol: 'SOLR',
+  side: 'BUY',
+  type: 'LIMIT',
+  price: 130,
+  quantity: 200
+});
+
+const liqResult = marginEngine.checkAndLiquidate('margin_trader');
+assert.strictEqual(Array.isArray(liqResult), true);
+assert.strictEqual(liqResult.length > 0, true);
+assert.strictEqual(liqResult[0].action, 'LIQUIDATE_LONG');
+console.log('[PASS] Margin maintenance breach triggered automated liquidation');
+
+// Test 15: SQLite Persistence of Margin Loans & Short Positions
+console.log('\nTest 15: SQLite Persistence of Margin Loans & Short Positions');
+const sqliteMargin = new SQLiteStorageManager(':memory:');
+const persistAccts = new AccountManager(100000, sqliteMargin);
+const pUser = persistAccts.getOrCreateUser('persist_margin', 'Persist Margin Trader');
+pUser.marginLoan = 12500;
+pUser.leverage = 2;
+pUser.holdings.set('AUTO', {
+  quantity: 0,
+  avgPrice: 0,
+  lockedQty: 0,
+  shortQuantity: 25,
+  shortAvgPrice: 420.50,
+  lockedShortQty: 0
+});
+
+sqliteMargin.saveAccount(pUser);
+
+// Reconstruct from SQLite
+const reloadedAccounts = sqliteMargin.loadAllAccounts();
+const reloadedUser = reloadedAccounts.find(a => a.id === 'persist_margin');
+assert.strictEqual(Boolean(reloadedUser), true);
+assert.strictEqual(reloadedUser.marginLoan, 12500);
+assert.strictEqual(reloadedUser.leverage, 2);
+const reloadedHolding = reloadedUser.holdings.get('AUTO');
+assert.strictEqual(Boolean(reloadedHolding), true);
+assert.strictEqual(reloadedHolding.shortQuantity, 25);
+assert.strictEqual(reloadedHolding.shortAvgPrice, 420.50);
+sqliteMargin.close();
+console.log('[PASS] SQLite storage seamlessly persisted and restored margin loans and short positions');
+
+console.log('\n[SUCCESS] ALL 15 CORE ENGINE & TIER 3 (v0.4) TESTS PASSED!\n');
+

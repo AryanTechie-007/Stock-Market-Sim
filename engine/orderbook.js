@@ -72,6 +72,12 @@ export class OrderBook {
           takerSide: 'BUY',
           makerOrderId: bestAsk.id,
           takerOrderId: order.id,
+          buyerLeverage: order.leverage || 1,
+          sellerLeverage: bestAsk.leverage || 1,
+          buyerIsShort: Boolean(order.isShort),
+          sellerIsShort: Boolean(bestAsk.isShort),
+          buyerOcoGroupId: order.ocoGroupId || null,
+          sellerOcoGroupId: bestAsk.ocoGroupId || null,
           timestamp: Date.now()
         };
         trades.push(trade);
@@ -131,6 +137,12 @@ export class OrderBook {
           takerSide: 'SELL',
           makerOrderId: bestBid.id,
           takerOrderId: order.id,
+          buyerLeverage: bestBid.leverage || 1,
+          sellerLeverage: order.leverage || 1,
+          buyerIsShort: Boolean(bestBid.isShort),
+          sellerIsShort: Boolean(order.isShort),
+          buyerOcoGroupId: bestBid.ocoGroupId || null,
+          sellerOcoGroupId: order.ocoGroupId || null,
           timestamp: Date.now()
         };
         trades.push(trade);
@@ -190,7 +202,7 @@ export class OrderBook {
   }
 
   /**
-   * Add a resting stop-loss or stop-limit order outside the active matching queue
+   * Add a resting stop-loss, stop-limit, or trailing-stop order outside the active matching queue
    * @param {Object} order
    */
   addStopOrder(order) {
@@ -199,6 +211,18 @@ export class OrderBook {
     order.filledQuantity = 0;
     order.timestamp = order.timestamp || Date.now();
     order.status = 'STOP_RESTING';
+
+    if (order.type === 'TRAILING_STOP') {
+      order.trailingDelta = Math.max(0.1, +(Number(order.trailingDelta || 5).toFixed(2)));
+      const refPrice = order.currentMarketPrice || order.price || order.stopPrice || 100;
+      if (order.side === 'SELL') {
+        order.peakPrice = refPrice;
+        order.stopPrice = Math.max(0.01, +(refPrice - order.trailingDelta).toFixed(2));
+      } else {
+        order.troughPrice = refPrice;
+        order.stopPrice = +(refPrice + order.trailingDelta).toFixed(2);
+      }
+    }
 
     this.stopOrders.set(order.id, order);
     this.orders.set(order.id, order);
@@ -217,13 +241,41 @@ export class OrderBook {
     for (const [orderId, order] of this.stopOrders.entries()) {
       let shouldTrigger = false;
 
-      if (order.side === 'BUY') {
-        // Buy stop triggers when market price rises to or above stopPrice (e.g. breakout / cover)
+      if (order.type === 'TRAILING_STOP') {
+        if (order.side === 'SELL') {
+          // Ratchet stop price upward if market price reaches new high
+          if (lastTradedPrice > order.peakPrice) {
+            order.peakPrice = lastTradedPrice;
+            const ratcheted = +(lastTradedPrice - order.trailingDelta).toFixed(2);
+            if (ratcheted > order.stopPrice) {
+              order.stopPrice = ratcheted;
+            }
+          }
+          // Trigger when market drops to or below ratcheted stop
+          if (lastTradedPrice <= order.stopPrice) {
+            shouldTrigger = true;
+          }
+        } else if (order.side === 'BUY') {
+          // Ratchet stop price downward if market price reaches new low
+          if (lastTradedPrice < order.troughPrice) {
+            order.troughPrice = lastTradedPrice;
+            const ratcheted = +(lastTradedPrice + order.trailingDelta).toFixed(2);
+            if (ratcheted < order.stopPrice) {
+              order.stopPrice = ratcheted;
+            }
+          }
+          // Trigger when market rises to or above ratcheted stop
+          if (lastTradedPrice >= order.stopPrice) {
+            shouldTrigger = true;
+          }
+        }
+      } else if (order.side === 'BUY') {
+        // Standard Buy stop triggers when market price rises to or above stopPrice (e.g. breakout / cover)
         if (lastTradedPrice >= order.stopPrice) {
           shouldTrigger = true;
         }
       } else if (order.side === 'SELL') {
-        // Sell stop triggers when market price falls to or below stopPrice (e.g. stop-loss)
+        // Standard Sell stop triggers when market price falls to or below stopPrice (e.g. stop-loss)
         if (lastTradedPrice <= order.stopPrice) {
           shouldTrigger = true;
         }

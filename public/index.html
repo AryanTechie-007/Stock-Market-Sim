@@ -127,11 +127,13 @@
       </div>
 
       <form class="order-form" id="orderForm">
-        <div class="type-row type-row-4">
+        <div class="type-row-6">
           <div class="type-btn on" id="typeLimitBtn">LIMIT</div>
           <div class="type-btn" id="typeMarketBtn">MARKET</div>
           <div class="type-btn" id="typeStopLossBtn">STOP LOSS</div>
           <div class="type-btn" id="typeStopLimitBtn">STOP LIMIT</div>
+          <div class="type-btn" id="typeTrailingStopBtn">TRAILING</div>
+          <div class="type-btn" id="typeOcoBtn">OCO BRKT</div>
         </div>
 
         <div class="field" id="limitPriceField">
@@ -153,6 +155,48 @@
           <div class="field-input">
             <input type="number" id="orderStopPriceInput" step="0.1" min="0.1" placeholder="440.00">
             <span class="field-suffix">CR</span>
+          </div>
+        </div>
+
+        <div class="field hidden" id="trailingDeltaField">
+          <div class="field-label">
+            <span>Trailing delta (distance)</span>
+            <span class="field-label-desc">ratchet distance</span>
+          </div>
+          <div class="field-input">
+            <input type="number" id="orderTrailingDeltaInput" step="0.5" min="0.1" placeholder="5.00">
+            <span class="field-suffix">CR</span>
+          </div>
+        </div>
+
+        <div class="field hidden" id="ocoFields">
+          <div class="field-label">
+            <span>OCO Take-Profit Limit</span>
+            <a href="#" id="useOcoLimitBestBtn">use best</a>
+          </div>
+          <div class="field-input" style="margin-bottom:8px;">
+            <input type="number" id="orderOcoLimitInput" step="0.1" min="0.1" placeholder="475.00">
+            <span class="field-suffix">CR</span>
+          </div>
+          <div class="field-label">
+            <span>OCO Stop-Loss Trigger</span>
+            <a href="#" id="useOcoStopMarketBtn">use market</a>
+          </div>
+          <div class="field-input">
+            <input type="number" id="orderOcoStopInput" step="0.1" min="0.1" placeholder="435.00">
+            <span class="field-suffix">CR</span>
+          </div>
+        </div>
+
+        <div class="field" id="leverageField">
+          <div class="field-label">
+            <span>Account Leverage</span>
+            <span id="leverageModeBadge" style="color:var(--text-faint);font-family:var(--mono);font-size:9.5px;">1x Cash</span>
+          </div>
+          <div class="type-row-3">
+            <div class="type-btn on" id="lev1Btn" data-lev="1">1x CASH</div>
+            <div class="type-btn" id="lev2Btn" data-lev="2">2x MARGIN</div>
+            <div class="type-btn" id="lev5Btn" data-lev="5">5x MARGIN</div>
           </div>
         </div>
 
@@ -221,7 +265,8 @@
         <div><div class="stat-label">Net worth</div><div class="stat-val" id="metricNetWorth">100,000.00 CR</div></div>
         <div><div class="stat-label">Available cash</div><div class="stat-val" id="metricCash">100,000.00 CR</div></div>
         <div><div class="stat-label">Holdings value</div><div class="stat-val" id="metricStockVal">0.00 CR</div></div>
-        <div><div class="stat-label">Locked in orders</div><div class="stat-val" id="metricLocked">0.00 CR</div></div>
+        <div><div class="stat-label">Margin loan</div><div class="stat-val" id="metricMarginLoan">0.00 CR</div></div>
+        <div><div class="stat-label">Margin health</div><div class="stat-val" id="metricMarginLevel">Safe (100%)</div></div>
         <div><div class="stat-label">Total P/L</div><div class="stat-val" id="metricTotalPnL">+0.00 CR (0.00%)</div></div>
         <div><div class="stat-label">Realized P/L</div><div class="stat-val" id="metricRealizedPnL">+0.00 CR</div></div>
       </div>
@@ -229,6 +274,7 @@
         <thead>
           <tr>
             <th>Symbol</th>
+            <th>Type</th>
             <th>Shares</th>
             <th>Available</th>
             <th>Avg cost</th>
@@ -240,7 +286,7 @@
           </tr>
         </thead>
         <tbody id="holdingsTableBody">
-          <tr class="empty-row"><td colspan="9">No positions yet — select a stock and place your first order.</td></tr>
+          <tr class="empty-row"><td colspan="10">No positions yet — select a stock and place your first order.</td></tr>
         </tbody>
       </table>
     </div>
