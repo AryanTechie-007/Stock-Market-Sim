@@ -12,6 +12,13 @@ export class NPCManager {
     this.traders = [];
 
     this._setupTraders();
+    this._bindEvents();
+  }
+
+  _bindEvents() {
+    this.marketManager.on('news', (newsItem) => {
+      this.broadcastNews(newsItem);
+    });
   }
 
   _setupTraders() {
@@ -107,6 +114,18 @@ export class NPCManager {
   stopAll() {
     for (const trader of this.traders) {
       trader.stop();
+    }
+  }
+
+  broadcastNews(newsItem) {
+    for (const trader of this.traders) {
+      if (typeof trader.reactToNews === 'function') {
+        try {
+          trader.reactToNews(newsItem);
+        } catch (err) {
+          // Keep resilient
+        }
+      }
     }
   }
 }

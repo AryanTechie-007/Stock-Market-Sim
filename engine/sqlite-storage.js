@@ -76,8 +76,17 @@ export class SQLiteStorageManager {
         FOREIGN KEY (user_id) REFERENCES accounts(id) ON DELETE CASCADE
       );
 
+      CREATE TABLE IF NOT EXISTS achievements (
+        user_id TEXT NOT NULL,
+        achievement_id TEXT NOT NULL,
+        unlocked_at INTEGER NOT NULL,
+        PRIMARY KEY (user_id, achievement_id),
+        FOREIGN KEY (user_id) REFERENCES accounts(id) ON DELETE CASCADE
+      );
+
       CREATE INDEX IF NOT EXISTS idx_trade_history_user ON trade_history(user_id, timestamp DESC);
       CREATE INDEX IF NOT EXISTS idx_holdings_user ON holdings(user_id);
+      CREATE INDEX IF NOT EXISTS idx_achievements_user ON achievements(user_id);
     `);
   }
 
@@ -129,6 +138,8 @@ export class SQLiteStorageManager {
           timestamp: t.timestamp
         }));
 
+        const achievementsList = this.loadAchievements(row.id);
+
         accountsList.push({
           id: row.id,
           name: row.name,
@@ -138,6 +149,7 @@ export class SQLiteStorageManager {
           lockedCredits: 0, // Reset locked credits on reboot
           holdings: holdingsMap,
           tradeHistory,
+          achievements: new Set(achievementsList),
           realizedPnL: row.realized_pnl,
           tradesCount: row.trades_count,
           volumeTraded: row.volume_traded,
@@ -230,6 +242,42 @@ export class SQLiteStorageManager {
       );
     } catch (err) {
       console.error('[SQLite] Error recording trade:', err.message);
+    }
+  }
+
+  /**
+   * Record an unlocked achievement
+   * @param {string} userId
+   * @param {string} achievementId
+   * @param {number} [unlockedAt]
+   */
+  saveAchievement(userId, achievementId, unlockedAt = Date.now()) {
+    try {
+      const stmt = this.db.prepare(`
+        INSERT OR IGNORE INTO achievements (user_id, achievement_id, unlocked_at)
+        VALUES (?, ?, ?)
+      `);
+      stmt.run(userId, achievementId, unlockedAt);
+    } catch (err) {
+      console.error('[SQLite] Error saving achievement:', err.message);
+    }
+  }
+
+  /**
+   * Load unlocked achievements for a user
+   * @param {string} userId
+   * @returns {Array<string>} list of achievement IDs
+   */
+  loadAchievements(userId) {
+    try {
+      const stmt = this.db.prepare(`
+        SELECT achievement_id FROM achievements WHERE user_id = ?
+      `);
+      const rows = stmt.all(userId);
+      return rows.map(r => r.achievement_id);
+    } catch (err) {
+      console.error('[SQLite] Error loading achievements:', err.message);
+      return [];
     }
   }
 

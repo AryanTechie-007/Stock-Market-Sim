@@ -113,6 +113,7 @@
         <div class="tab active" id="tabBtnPortfolio">Portfolio</div>
         <div class="tab" id="tabBtnOpenOrders">Open orders (<span id="openOrdersBadge">0</span>)</div>
         <div class="tab" id="tabBtnMyTrades">My Trades (<span id="myTradesBadge">0</span>)</div>
+        <div class="tab" id="tabBtnAchievements">Achievements (<span id="achievementsBadge">0/7</span>)</div>
         <div class="tab" id="tabBtnLeaderboard">Leaderboard</div>
         <div class="tab" id="tabBtnNews">News log (<span id="newsCountBadge">0</span>)</div>
       </div>
@@ -126,9 +127,11 @@
       </div>
 
       <form class="order-form" id="orderForm">
-        <div class="type-row">
+        <div class="type-row type-row-4">
           <div class="type-btn on" id="typeLimitBtn">LIMIT</div>
           <div class="type-btn" id="typeMarketBtn">MARKET</div>
+          <div class="type-btn" id="typeStopLossBtn">STOP LOSS</div>
+          <div class="type-btn" id="typeStopLimitBtn">STOP LIMIT</div>
         </div>
 
         <div class="field" id="limitPriceField">
@@ -138,6 +141,17 @@
           </div>
           <div class="field-input">
             <input type="number" id="orderPriceInput" step="0.1" min="0.1" placeholder="450.00">
+            <span class="field-suffix">CR</span>
+          </div>
+        </div>
+
+        <div class="field hidden" id="stopPriceField">
+          <div class="field-label">
+            <span>Stop trigger price</span>
+            <a href="#" id="useCurrentAsStopBtn">use market</a>
+          </div>
+          <div class="field-input">
+            <input type="number" id="orderStopPriceInput" step="0.1" min="0.1" placeholder="440.00">
             <span class="field-suffix">CR</span>
           </div>
         </div>
@@ -240,7 +254,7 @@
             <th>Symbol</th>
             <th>Side</th>
             <th>Type</th>
-            <th>Limit price</th>
+            <th>Price / Trigger</th>
             <th>Qty</th>
             <th>Remaining</th>
             <th>Placed</th>
@@ -248,7 +262,7 @@
           </tr>
         </thead>
         <tbody id="openOrdersTableBody">
-          <tr class="empty-row"><td colspan="9">No resting limit orders in the book.</td></tr>
+          <tr class="empty-row"><td colspan="9">No resting limit or stop orders in the book.</td></tr>
         </tbody>
       </table>
     </div>
@@ -303,6 +317,75 @@
       </table>
     </div>
 
+    <!-- Tab 6: Achievements View -->
+    <div class="tab-view" id="viewAchievements">
+      <div class="achievements-wrap">
+        <div class="achievements-header">
+          <div>
+            <div class="achievements-title">TRADER MILESTONES & ACHIEVEMENTS</div>
+            <div class="achievements-sub">Complete quantitative and tactical milestones to earn recognition badges and credit bonuses.</div>
+          </div>
+          <div class="achievements-score" id="achievementsScore">0 / 7 UNLOCKED</div>
+        </div>
+        <div class="achievements-grid" id="achievementsGridContainer">
+          <!-- Dynamically populated badges -->
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Toast Notification Hub -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- End-of-Day Summary Modal Dialog -->
+  <div class="modal-overlay hidden" id="daySummaryModal">
+    <div class="modal-box day-summary-box">
+      <div class="modal-head">
+        <div class="modal-head-title-wrap">
+          <span class="badge-day" id="summaryDayBadge">DAY 1</span>
+          <span class="modal-title">DAILY SESSION RECAP & SETTLEMENT</span>
+        </div>
+        <button class="modal-close-btn" id="closeDaySummaryBtn">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="summary-pnl-hero" id="summaryPnlHero">
+          <div class="summary-hero-label">Daily Net P/L</div>
+          <div class="summary-hero-val" id="summaryDayPnl">+0.00 CR (+0.00%)</div>
+        </div>
+        <div class="summary-stats-grid">
+          <div class="summary-stat-cell">
+            <div class="cell-lbl">Ending Net Worth</div>
+            <div class="cell-val" id="summaryNetWorth">100,000.00 CR</div>
+          </div>
+          <div class="summary-stat-cell">
+            <div class="cell-lbl">Available Cash</div>
+            <div class="cell-val" id="summaryCash">100,000.00 CR</div>
+          </div>
+          <div class="summary-stat-cell">
+            <div class="cell-lbl">Holdings Value</div>
+            <div class="cell-val" id="summaryStockVal">0.00 CR</div>
+          </div>
+          <div class="summary-stat-cell">
+            <div class="cell-lbl">Executions Today</div>
+            <div class="cell-val" id="summaryTradesCount">0</div>
+          </div>
+          <div class="summary-stat-cell">
+            <div class="cell-lbl">Volume Traded Today</div>
+            <div class="cell-val" id="summaryVolume">0.00 CR</div>
+          </div>
+          <div class="summary-stat-cell">
+            <div class="cell-lbl">Market Top Gainer</div>
+            <div class="cell-val" id="summaryTopGainer">---</div>
+          </div>
+        </div>
+        <div class="summary-countdown-bar">
+          <span>Next Trading Session Opens In:</span>
+          <span class="countdown-val" id="summaryNextDayCountdown">00:25</span>
+        </div>
+        <button class="place-btn" id="dismissDaySummaryBtn" style="margin-top:14px;">PROCEED TO NEXT SESSION</button>
+      </div>
+    </div>
   </div>
 
   <!-- Callsign Modal Dialog (Hard right angles) -->

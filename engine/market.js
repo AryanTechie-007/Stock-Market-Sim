@@ -459,4 +459,24 @@ export class MarketManager extends EventEmitter {
   getNewsFeed() {
     return this.newsFeed;
   }
+
+  /**
+   * Summarize day performance across all listed stocks
+   */
+  getDayPerformance() {
+    const list = this.getAllCompanies();
+    list.sort((a, b) => b.changePercent - a.changePercent);
+    const topGainer = list[0] || null;
+    const topLoser = list[list.length - 1] || null;
+    let totalVolume = 0;
+    for (const c of list) {
+      totalVolume += c.volume;
+    }
+    return {
+      topGainer: topGainer ? { symbol: topGainer.symbol, name: topGainer.name, change: topGainer.change, changePercent: topGainer.changePercent } : null,
+      topLoser: topLoser ? { symbol: topLoser.symbol, name: topLoser.name, change: topLoser.change, changePercent: topLoser.changePercent } : null,
+      totalVolume,
+      companies: list
+    };
+  }
 }

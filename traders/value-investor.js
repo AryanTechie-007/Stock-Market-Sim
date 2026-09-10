@@ -17,6 +17,39 @@ export class ValueInvestor extends BaseTrader {
     this.marginOfSafety = options.marginOfSafety || 0.02; // 2% discount threshold
   }
 
+  reactToNews(newsItem) {
+    if (!newsItem || !newsItem.symbols || !this.clock.isTradingOpen()) return;
+
+    for (const sym of newsItem.symbols) {
+      const comp = this.marketManager.getCompany(sym);
+      if (!comp) continue;
+
+      const discount = (comp.intrinsicValue - comp.price) / comp.intrinsicValue;
+      if (discount > this.marginOfSafety) {
+        const qty = Math.floor(Math.random() * 30 + 15);
+        this.submitOrder({
+          symbol: sym,
+          side: 'BUY',
+          type: 'LIMIT',
+          price: comp.price,
+          quantity: qty
+        });
+      } else if (discount < -this.marginOfSafety) {
+        const holding = this.accountManager.getUser(this.id)?.holdings.get(sym);
+        if (holding && holding.quantity > 5) {
+          const qty = Math.min(holding.quantity, Math.floor(Math.random() * 25 + 10));
+          this.submitOrder({
+            symbol: sym,
+            side: 'SELL',
+            type: 'LIMIT',
+            price: comp.price,
+            quantity: qty
+          });
+        }
+      }
+    }
+  }
+
   act() {
     const companies = this.marketManager.getAllCompanies();
     for (const comp of companies) {

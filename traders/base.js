@@ -67,6 +67,14 @@ export class BaseTrader {
     // Abstract method to be overridden
   }
 
+  /**
+   * Handle breaking news event broadcast
+   * @param {Object} newsItem
+   */
+  reactToNews(newsItem) {
+    // Override in specialized trader sub-classes
+  }
+
   submitOrder({ symbol, side, type, price, quantity }) {
     const res = this.matchingEngine.submitOrder({
       userId: this.id,

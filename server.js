@@ -67,6 +67,21 @@ function sendPortfolioUpdate(userId) {
   }
 }
 
+function triggerAchievementCheck(uId, eventType = 'TRADE_SETTLED', eventData = {}) {
+  if (!uId) return;
+  const newlyUnlocked = accountManager.checkAchievements(uId, marketManager.getCurrentPrices(), eventType, eventData);
+  if (newlyUnlocked && newlyUnlocked.length > 0) {
+    const sockets = userSockets.get(uId);
+    if (sockets) {
+      for (const sId of sockets) {
+        for (const ach of newlyUnlocked) {
+          io.to(sId).emit('achievement:unlocked', ach);
+        }
+      }
+    }
+  }
+}
+
 // Wire Engine events to WebSockets
 marketManager.on('priceUpdate', (data) => {
   io.emit('price:update', data);
@@ -74,6 +89,16 @@ marketManager.on('priceUpdate', (data) => {
 
 matchingEngine.on('orderbookChange', ({ symbol, depth }) => {
   io.emit('orderbook:update', { symbol, depth });
+});
+
+matchingEngine.on('stopOrderTriggered', (order) => {
+  const sockets = userSockets.get(order.userId);
+  if (sockets) {
+    for (const sId of sockets) {
+      io.to(sId).emit('order:stopTriggered', order);
+    }
+  }
+  sendPortfolioUpdate(order.userId);
 });
 
 matchingEngine.on('trade', (trade) => {
@@ -92,6 +117,10 @@ matchingEngine.on('trade', (trade) => {
       io.to(sId).emit('trade:personal', { ...trade, mySide: 'SELL' });
     }
   }
+
+  // Check achievements upon settlement
+  triggerAchievementCheck(trade.buyerId);
+  triggerAchievementCheck(trade.sellerId);
 
   // Notify buyer and seller with fresh portfolio
   sendPortfolioUpdate(trade.buyerId);
@@ -118,6 +147,30 @@ clock.on('phaseChange', (clockState) => {
   io.emit('clock:phaseChange', clockState);
   // Also push leaderboard on phase changes
   io.emit('leaderboard:update', accountManager.getLeaderboard(marketManager.getCurrentPrices(), 15));
+});
+
+clock.on('dayEnd', ({ day }) => {
+  const marketPerformance = marketManager.getDayPerformance();
+  const leaderboard = accountManager.getLeaderboard(marketManager.getCurrentPrices(), 10);
+
+  // Emit personalized day end summary to each connected user
+  for (const [uId, sockets] of userSockets.entries()) {
+    const userSummary = accountManager.getDaySummary(uId, marketManager.getCurrentPrices(), day);
+    for (const sId of sockets) {
+      io.to(sId).emit('market:daySummary', {
+        day,
+        userSummary,
+        marketPerformance,
+        leaderboard,
+        postMarketSec: clock.durations.POST_MARKET
+      });
+    }
+  }
+});
+
+clock.on('newDay', ({ day }) => {
+  accountManager.onNewDay(day, marketManager.getCurrentPrices());
+  io.emit('market:newDay', { day });
 });
 
 // Periodic broadcast of full leaderboard and depths
@@ -173,8 +226,13 @@ io.on('connection', (socket) => {
       side: orderData.side,
       type: orderData.type,
       price: orderData.price,
+      stopPrice: orderData.stopPrice,
       quantity: orderData.quantity
     });
+
+    if (result.success && (orderData.type === 'STOP_LOSS' || orderData.type === 'STOP_LIMIT')) {
+      triggerAchievementCheck(userId, 'STOP_ORDER_PLACED', result.order);
+    }
 
     sendPortfolioUpdate(userId);
 

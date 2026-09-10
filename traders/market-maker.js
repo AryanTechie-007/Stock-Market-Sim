@@ -15,6 +15,24 @@ export class MarketMaker extends BaseTrader {
       ...options
     });
     this.spreadTarget = options.spreadTarget || 0.008; // 0.8% spread
+    this.volatilitySpreads = new Map(); // symbol -> multiplier
+  }
+
+  reactToNews(newsItem) {
+    if (!newsItem || !newsItem.symbols) return;
+    for (const sym of newsItem.symbols) {
+      // Widen spread by 2.2x to protect against volatility
+      this.volatilitySpreads.set(sym, 2.2);
+      this.cancelAllMyOrders(sym);
+
+      // Revert after 15 seconds
+      setTimeout(() => {
+        const cur = this.volatilitySpreads.get(sym);
+        if (cur && cur > 1.0) {
+          this.volatilitySpreads.set(sym, Math.max(1.0, cur - 0.6));
+        }
+      }, 15000);
+    }
   }
 
   act() {
@@ -24,19 +42,34 @@ export class MarketMaker extends BaseTrader {
     if (!target) return;
 
     const symbol = target.symbol;
-    const depth = this.matchingEngine.getDepth(symbol, 5);
     const lastPrice = target.price;
 
     // First cancel old quotes for this symbol to refresh ladder
     this.cancelAllMyOrders(symbol);
 
-    const halfSpread = (lastPrice * this.spreadTarget) / 2;
+    const spreadMult = this.volatilitySpreads.get(symbol) || 1.0;
+    const effectiveSpread = this.spreadTarget * spreadMult;
+    const halfSpread = (lastPrice * effectiveSpread) / 2;
+
+    // Inventory rebalancing skew
+    const user = this.accountManager.getUser(this.id);
+    const holding = user?.holdings.get(symbol);
+    const shares = holding ? holding.quantity : 5000;
+    let skew = 0;
+    if (shares > 5500) {
+      // Too much inventory: skew down to sell off
+      skew = -lastPrice * 0.002;
+    } else if (shares < 4500) {
+      // Low inventory: skew up to buy in
+      skew = lastPrice * 0.002;
+    }
+
     const levels = [1, 2, 3];
 
     for (const lvl of levels) {
-      const spreadMultiplier = lvl * 0.7;
-      const bidPrice = +(lastPrice - halfSpread * spreadMultiplier).toFixed(2);
-      const askPrice = +(lastPrice + halfSpread * spreadMultiplier).toFixed(2);
+      const levelMultiplier = lvl * 0.7;
+      const bidPrice = +(lastPrice + skew - halfSpread * levelMultiplier).toFixed(2);
+      const askPrice = +(lastPrice + skew + halfSpread * levelMultiplier).toFixed(2);
 
       const qty = Math.floor(Math.random() * 25 + 10 * lvl);
 

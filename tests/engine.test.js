@@ -177,4 +177,126 @@ assert.strictEqual(recoveredAccounts[0].tradeHistory[0].price, 1200);
 memorySqlite.close();
 console.log('[PASS] SQLite relational persistence (accounts, holdings, trade_history) verified');
 
-console.log('\n[SUCCESS] ALL CORE ENGINE TESTS PASSED!\n');
+// Test 8: Advanced Order Types (Stop-Loss and Stop-Limit)
+console.log('Test 8: Advanced Order Types (Stop-Loss & Stop-Limit)');
+const stopClock = new MarketClock({ openDurationSec: 120 });
+const stopAccts = new AccountManager(100000);
+const stopEngine = new MatchingEngine(['AUTO'], stopAccts, stopClock);
+
+const trader1 = stopAccts.getOrCreateUser('t1', 'Trader One');
+const trader2 = stopAccts.getOrCreateUser('t2', 'Trader Two');
+
+// Give trader1 10 shares of AUTO
+trader1.holdings.set('AUTO', { quantity: 10, avgPrice: 450, lockedQty: 0 });
+
+// Trader 1 sets a Stop-Loss sell order for 10 shares at stop price 440
+const slOrderRes = stopEngine.submitOrder({
+  userId: 't1',
+  userName: 'Trader One',
+  symbol: 'AUTO',
+  side: 'SELL',
+  type: 'STOP_LOSS',
+  stopPrice: 440,
+  quantity: 10
+});
+assert.strictEqual(slOrderRes.success, true);
+assert.strictEqual(slOrderRes.isStop, true);
+// Trader 1's 10 shares should be locked
+assert.strictEqual(trader1.holdings.get('AUTO').lockedQty, 10);
+
+// Verify order is in open orders
+const openOrdersT1 = stopEngine.getUserOpenOrders('t1');
+assert.strictEqual(openOrdersT1.length, 1);
+assert.strictEqual(openOrdersT1[0].type, 'STOP_LOSS');
+assert.strictEqual(openOrdersT1[0].stopPrice, 440);
+
+// Now Trader 2 places a limit buy at 438, which should not immediately trigger until a trade happens
+stopEngine.submitOrder({
+  userId: 't2',
+  userName: 'Trader Two',
+  symbol: 'AUTO',
+  side: 'BUY',
+  type: 'LIMIT',
+  price: 438,
+  quantity: 10
+});
+
+// A trade occurs at 439 between other participants
+const arbBot = stopAccts.getOrCreateUser('bot_arb', 'Arb Bot', true);
+arbBot.holdings.set('AUTO', { quantity: 10, avgPrice: 439, lockedQty: 0 });
+
+// Selling 1 share at 439 matches Trader 2's bid at 438 or another trade at 439
+// Let's create an order that trades at 439 to trigger the stop
+stopEngine.submitOrder({
+  userId: 'bot_arb',
+  userName: 'Arb Bot',
+  symbol: 'AUTO',
+  side: 'SELL',
+  type: 'LIMIT',
+  price: 439,
+  quantity: 1
+});
+stopEngine.submitOrder({
+  userId: 't2',
+  userName: 'Trader Two',
+  symbol: 'AUTO',
+  side: 'BUY',
+  type: 'LIMIT',
+  price: 439,
+  quantity: 1
+});
+
+// The last trade was at 439, which is <= stopPrice (440).
+// This must trigger Trader 1's Stop-Loss sell (converted to MARKET sell) and match remaining bids!
+const t1RemainingHolding = trader1.holdings.get('AUTO');
+assert.strictEqual(t1RemainingHolding.quantity < 10, true, 'Stop loss order should have executed');
+console.log('[PASS] Stop-Loss successfully triggered and executed upon price crossing');
+
+// Test 9: Achievements Engine & SQLite Persistence
+console.log('Test 9: Achievements Milestone Detection & Bonus Granting');
+const achSqlite = new SQLiteStorageManager(':memory:');
+const achAccts = new AccountManager(100000, achSqlite);
+const achUser = achAccts.getOrCreateUser('ach_trader', 'Achieve Hunter');
+
+// Simulate first trade
+achUser.tradesCount = 1;
+const unlocked1 = achAccts.checkAchievements('ach_trader', { AUTO: 450 });
+assert.strictEqual(unlocked1.some(a => a.id === 'FIRST_TRADE'), true);
+assert.strictEqual(achUser.achievements.has('FIRST_TRADE'), true);
+// Reward credits should be granted (250 CR)
+assert.strictEqual(achUser.credits, 100250);
+
+// Verify SQLite persistence of achievement
+const persistedAchs = achSqlite.loadAchievements('ach_trader');
+assert.strictEqual(persistedAchs.includes('FIRST_TRADE'), true);
+
+// Simulate placing a stop order
+const unlocked2 = achAccts.checkAchievements('ach_trader', { AUTO: 450 }, 'STOP_ORDER_PLACED');
+assert.strictEqual(unlocked2.some(a => a.id === 'RISK_MANAGER'), true);
+assert.strictEqual(achUser.achievements.has('RISK_MANAGER'), true);
+achSqlite.close();
+console.log('[PASS] Achievements milestones correctly evaluated, awarded, and persisted');
+
+// Test 10: Multi-Day Progression and End-of-Day Summary
+console.log('Test 10: Multi-Day Progression & End-of-Day Summary');
+const dayAccts = new AccountManager(100000);
+const dayUser = dayAccts.getOrCreateUser('day_trader', 'Day Trader');
+dayUser.credits = 105000; // +5,000 CR profit
+dayUser.tradesToday = 4;
+dayUser.volumeToday = 20000;
+
+const summary = dayAccts.getDaySummary('day_trader', { AUTO: 450 }, 1);
+assert.strictEqual(summary.day, 1);
+assert.strictEqual(summary.dayPnL, 5000);
+assert.strictEqual(summary.dayPnLPercent, 5);
+assert.strictEqual(summary.tradesToday, 4);
+assert.strictEqual(summary.volumeToday, 20000);
+
+// Advance to Day 2
+dayAccts.onNewDay(2, { AUTO: 450 });
+assert.strictEqual(dayUser.tradesToday, 0);
+assert.strictEqual(dayUser.volumeToday, 0);
+assert.strictEqual(dayUser.dayStartNetWorth, 105000);
+console.log('[PASS] Multi-Day recap calculations and clean Day rollover verified');
+
+console.log('\n[SUCCESS] ALL CORE ENGINE & TIER 2 TESTS PASSED!\n');

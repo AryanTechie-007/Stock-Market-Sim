@@ -134,6 +134,46 @@ function playNewsTone() {
   } catch (e) {}
 }
 
+function playAchievementTone() {
+  if (!state.soundEnabled) return;
+  try {
+    const ctx = getAudioContext();
+    const now = ctx.currentTime;
+    const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+    notes.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, now + idx * 0.09);
+      gain.gain.setValueAtTime(0.06, now + idx * 0.09);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.09 + 0.35);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + idx * 0.09);
+      osc.stop(now + idx * 0.09 + 0.35);
+    });
+  } catch (e) {}
+}
+
+function playStopTriggerTone() {
+  if (!state.soundEnabled) return;
+  try {
+    const ctx = getAudioContext();
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(650, now);
+    osc.frequency.linearRampToValueAtTime(320, now + 0.25);
+    gain.gain.setValueAtTime(0.04, now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.25);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.25);
+  } catch (e) {}
+}
+
 // Socket Connection
 const socket = io();
 
@@ -175,9 +215,14 @@ const elements = {
   sideSellTab: document.getElementById('sideSellTab'),
   typeLimitBtn: document.getElementById('typeLimitBtn'),
   typeMarketBtn: document.getElementById('typeMarketBtn'),
+  typeStopLossBtn: document.getElementById('typeStopLossBtn'),
+  typeStopLimitBtn: document.getElementById('typeStopLimitBtn'),
   limitPriceField: document.getElementById('limitPriceField'),
   orderPriceInput: document.getElementById('orderPriceInput'),
   useBestPriceBtn: document.getElementById('useBestPriceBtn'),
+  stopPriceField: document.getElementById('stopPriceField'),
+  orderStopPriceInput: document.getElementById('orderStopPriceInput'),
+  useCurrentAsStopBtn: document.getElementById('useCurrentAsStopBtn'),
   orderQtyInput: document.getElementById('orderQtyInput'),
   orderEstimatedTotal: document.getElementById('orderEstimatedTotal'),
   submitOrderBtn: document.getElementById('submitOrderBtn'),
@@ -192,17 +237,38 @@ const elements = {
   tabBtnPortfolio: document.getElementById('tabBtnPortfolio'),
   tabBtnOpenOrders: document.getElementById('tabBtnOpenOrders'),
   tabBtnMyTrades: document.getElementById('tabBtnMyTrades'),
+  tabBtnAchievements: document.getElementById('tabBtnAchievements'),
   tabBtnLeaderboard: document.getElementById('tabBtnLeaderboard'),
   tabBtnNews: document.getElementById('tabBtnNews'),
   openOrdersBadge: document.getElementById('openOrdersBadge'),
   myTradesBadge: document.getElementById('myTradesBadge'),
+  achievementsBadge: document.getElementById('achievementsBadge'),
   newsCountBadge: document.getElementById('newsCountBadge'),
   // Tab Views
   viewPortfolio: document.getElementById('viewPortfolio'),
   viewOpenOrders: document.getElementById('viewOpenOrders'),
   viewMyTrades: document.getElementById('viewMyTrades'),
+  viewAchievements: document.getElementById('viewAchievements'),
   viewLeaderboard: document.getElementById('viewLeaderboard'),
   viewNews: document.getElementById('viewNews'),
+  // Achievements View
+  achievementsScore: document.getElementById('achievementsScore'),
+  achievementsGridContainer: document.getElementById('achievementsGridContainer'),
+  // Toast Container
+  toastContainer: document.getElementById('toastContainer'),
+  // End-of-Day Modal
+  daySummaryModal: document.getElementById('daySummaryModal'),
+  summaryDayBadge: document.getElementById('summaryDayBadge'),
+  closeDaySummaryBtn: document.getElementById('closeDaySummaryBtn'),
+  dismissDaySummaryBtn: document.getElementById('dismissDaySummaryBtn'),
+  summaryDayPnl: document.getElementById('summaryDayPnl'),
+  summaryNetWorth: document.getElementById('summaryNetWorth'),
+  summaryCash: document.getElementById('summaryCash'),
+  summaryStockVal: document.getElementById('summaryStockVal'),
+  summaryTradesCount: document.getElementById('summaryTradesCount'),
+  summaryVolume: document.getElementById('summaryVolume'),
+  summaryTopGainer: document.getElementById('summaryTopGainer'),
+  summaryNextDayCountdown: document.getElementById('summaryNextDayCountdown'),
   // Portfolio Stats
   metricNetWorth: document.getElementById('metricNetWorth'),
   metricCash: document.getElementById('metricCash'),
@@ -215,7 +281,7 @@ const elements = {
   myTradesTableBody: document.getElementById('myTradesTableBody'),
   leaderboardTableBody: document.getElementById('leaderboardTableBody'),
   newsLogContainer: document.getElementById('newsLogContainer'),
-  // Modal
+  // Nickname Modal
   nicknameModal: document.getElementById('nicknameModal'),
   nicknameForm: document.getElementById('nicknameForm'),
   nicknameInput: document.getElementById('nicknameInput')
@@ -743,6 +809,11 @@ function renderPortfolio(portfolio) {
     }
   }
 
+  // Achievements Rack
+  if (portfolio.allAchievements) {
+    renderAchievements(portfolio.allAchievements, portfolio.achievements || []);
+  }
+
   // My Trades Table
   renderMyTrades(portfolio.tradeHistory);
 }
@@ -752,13 +823,43 @@ window.quickTradeHolding = function(symbol) {
   setOrderSide('SELL');
 };
 
+function renderAchievements(allAchievements, unlockedList) {
+  if (!allAchievements || !elements.achievementsGridContainer) return;
+  const unlockedIds = new Set((unlockedList || []).map(a => a.id));
+
+  if (elements.achievementsBadge) {
+    elements.achievementsBadge.textContent = `${unlockedIds.size}/${allAchievements.length}`;
+  }
+  if (elements.achievementsScore) {
+    elements.achievementsScore.textContent = `${unlockedIds.size} / ${allAchievements.length} UNLOCKED`;
+  }
+
+  elements.achievementsGridContainer.innerHTML = '';
+
+  for (const ach of allAchievements) {
+    const isUnlocked = unlockedIds.has(ach.id);
+    const card = document.createElement('div');
+    card.className = `achievement-card ${isUnlocked ? 'unlocked' : 'locked'}`;
+    card.innerHTML = `
+      <div class="ach-badge-icon">${ach.icon || '🏆'}</div>
+      <div class="ach-info">
+        <div class="ach-title">${ach.title}</div>
+        <div class="ach-desc">${ach.description}</div>
+        <div class="ach-reward">+${ach.rewardCredits} CR REWARD</div>
+      </div>
+      <div class="ach-status">${isUnlocked ? 'UNLOCKED' : 'LOCKED'}</div>
+    `;
+    elements.achievementsGridContainer.appendChild(card);
+  }
+}
+
 function renderOpenOrders(openOrders) {
   state.openOrders = openOrders || [];
   elements.openOrdersBadge.textContent = state.openOrders.length;
   elements.openOrdersTableBody.innerHTML = '';
 
   if (state.openOrders.length === 0) {
-    elements.openOrdersTableBody.innerHTML = `<tr class="empty-row"><td colspan="9">No resting limit orders in the book.</td></tr>`;
+    elements.openOrdersTableBody.innerHTML = `<tr class="empty-row"><td colspan="9">No resting limit or stop orders in the book.</td></tr>`;
     return;
   }
 
@@ -766,12 +867,24 @@ function renderOpenOrders(openOrders) {
     const isBuy = ord.side === 'BUY';
     const sideCls = isBuy ? 'up' : 'down';
     const row = document.createElement('tr');
+
+    let priceDisplay = `${Number(ord.price || 0).toFixed(2)} CR`;
+    if (ord.type === 'STOP_LOSS') {
+      priceDisplay = `Stop: ${ord.stopPrice ? Number(ord.stopPrice).toFixed(2) : '—'} CR`;
+    } else if (ord.type === 'STOP_LIMIT') {
+      priceDisplay = `Stop: ${ord.stopPrice ? Number(ord.stopPrice).toFixed(2) : '—'} | Lmt: ${Number(ord.price).toFixed(2)}`;
+    }
+
+    const typeBadge = (ord.type === 'STOP_LOSS' || ord.type === 'STOP_LIMIT')
+      ? `<span class="badge-tag" style="color:var(--amber);border-color:var(--amber)">${ord.type.replace('_', ' ')}</span>`
+      : ord.type;
+
     row.innerHTML = `
-      <td style="font-size:10px;color:var(--text-faint)">${ord.id}</td>
+      <td style="font-size:10px;color:var(--text-faint)">${ord.id.slice(-8)}</td>
       <td><b>${ord.symbol}</b></td>
       <td class="${sideCls}">${ord.side}</td>
-      <td>${ord.type}</td>
-      <td>${ord.price.toFixed(2)} CR</td>
+      <td>${typeBadge}</td>
+      <td>${priceDisplay}</td>
       <td>${ord.originalQuantity}</td>
       <td>${ord.quantity}</td>
       <td>${new Date(ord.timestamp).toLocaleTimeString()}</td>
@@ -907,32 +1020,50 @@ function handleBreakingNews(newsItem) {
 // Order Form UI Controls
 function setOrderSide(side) {
   state.orderSide = side;
+  const prettyType = state.orderType.replace('_', ' ');
   if (side === 'BUY') {
     elements.sideBuyTab.className = 'side-btn buy on';
     elements.sideSellTab.className = 'side-btn sell';
     elements.submitOrderBtn.className = 'place-btn';
-    elements.submitOrderBtn.textContent = `PLACE ${state.orderType} BUY`;
+    elements.submitOrderBtn.textContent = `PLACE ${prettyType} BUY`;
   } else {
     elements.sideBuyTab.className = 'side-btn buy';
     elements.sideSellTab.className = 'side-btn sell on';
     elements.submitOrderBtn.className = 'place-btn sell-mode';
-    elements.submitOrderBtn.textContent = `PLACE ${state.orderType} SELL`;
+    elements.submitOrderBtn.textContent = `PLACE ${prettyType} SELL`;
   }
   updateCostEstimate();
 }
 
 function setOrderType(type) {
   state.orderType = type;
-  if (type === 'LIMIT') {
-    elements.typeLimitBtn.className = 'type-btn on';
-    elements.typeMarketBtn.className = 'type-btn';
+  elements.typeLimitBtn.classList.toggle('on', type === 'LIMIT');
+  elements.typeMarketBtn.classList.toggle('on', type === 'MARKET');
+  elements.typeStopLossBtn.classList.toggle('on', type === 'STOP_LOSS');
+  elements.typeStopLimitBtn.classList.toggle('on', type === 'STOP_LIMIT');
+
+  if (type === 'LIMIT' || type === 'STOP_LIMIT') {
+    elements.limitPriceField.classList.remove('hidden');
     elements.limitPriceField.style.display = 'block';
   } else {
-    elements.typeMarketBtn.className = 'type-btn on';
-    elements.typeLimitBtn.className = 'type-btn';
+    elements.limitPriceField.classList.add('hidden');
     elements.limitPriceField.style.display = 'none';
   }
-  elements.submitOrderBtn.textContent = `PLACE ${type} ${state.orderSide}`;
+
+  if (type === 'STOP_LOSS' || type === 'STOP_LIMIT') {
+    elements.stopPriceField.classList.remove('hidden');
+    elements.stopPriceField.style.display = 'block';
+    if (!elements.orderStopPriceInput.value) {
+      const comp = state.companies.get(state.selectedSymbol);
+      if (comp) elements.orderStopPriceInput.value = comp.price.toFixed(2);
+    }
+  } else {
+    elements.stopPriceField.classList.add('hidden');
+    elements.stopPriceField.style.display = 'none';
+  }
+
+  const prettyType = type.replace('_', ' ');
+  elements.submitOrderBtn.textContent = `PLACE ${prettyType} ${state.orderSide}`;
   updateCostEstimate();
 }
 
@@ -940,9 +1071,12 @@ function updateCostEstimate() {
   const comp = state.companies.get(state.selectedSymbol);
   if (!comp) return;
 
-  const price = state.orderType === 'LIMIT'
-    ? parseFloat(elements.orderPriceInput.value) || comp.price
-    : comp.price;
+  let price = comp.price;
+  if (state.orderType === 'LIMIT' || state.orderType === 'STOP_LIMIT') {
+    price = parseFloat(elements.orderPriceInput.value) || comp.price;
+  } else if (state.orderType === 'STOP_LOSS') {
+    price = parseFloat(elements.orderStopPriceInput.value) || comp.price;
+  }
 
   const qty = parseInt(elements.orderQtyInput.value, 10) || 0;
   const total = price * qty;
@@ -953,8 +1087,11 @@ elements.sideBuyTab.addEventListener('click', () => setOrderSide('BUY'));
 elements.sideSellTab.addEventListener('click', () => setOrderSide('SELL'));
 elements.typeLimitBtn.addEventListener('click', () => setOrderType('LIMIT'));
 elements.typeMarketBtn.addEventListener('click', () => setOrderType('MARKET'));
+elements.typeStopLossBtn.addEventListener('click', () => setOrderType('STOP_LOSS'));
+elements.typeStopLimitBtn.addEventListener('click', () => setOrderType('STOP_LIMIT'));
 
 elements.orderPriceInput.addEventListener('input', updateCostEstimate);
+elements.orderStopPriceInput.addEventListener('input', updateCostEstimate);
 elements.orderQtyInput.addEventListener('input', updateCostEstimate);
 
 elements.useBestPriceBtn.addEventListener('click', (e) => {
@@ -969,6 +1106,15 @@ elements.useBestPriceBtn.addEventListener('click', (e) => {
   updateCostEstimate();
 });
 
+elements.useCurrentAsStopBtn.addEventListener('click', (e) => {
+  e.preventDefault();
+  const comp = state.companies.get(state.selectedSymbol);
+  if (comp) {
+    elements.orderStopPriceInput.value = comp.price.toFixed(2);
+    updateCostEstimate();
+  }
+});
+
 // Quick Quantity Percentage Buttons
 document.querySelectorAll('.pct-btn').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -976,9 +1122,12 @@ document.querySelectorAll('.pct-btn').forEach(btn => {
     const comp = state.companies.get(state.selectedSymbol);
     if (!comp || !state.portfolio) return;
 
-    const price = state.orderType === 'LIMIT'
-      ? parseFloat(elements.orderPriceInput.value) || comp.price
-      : comp.price;
+    let price = comp.price;
+    if (state.orderType === 'LIMIT' || state.orderType === 'STOP_LIMIT') {
+      price = parseFloat(elements.orderPriceInput.value) || comp.price;
+    } else if (state.orderType === 'STOP_LOSS') {
+      price = parseFloat(elements.orderStopPriceInput.value) || comp.price;
+    }
 
     if (state.orderSide === 'BUY') {
       const budget = state.portfolio.availableCredits * pct;
@@ -1001,9 +1150,13 @@ elements.orderForm.addEventListener('submit', (e) => {
   const comp = state.companies.get(state.selectedSymbol);
   if (!comp) return;
 
-  const price = state.orderType === 'LIMIT'
+  const price = (state.orderType === 'LIMIT' || state.orderType === 'STOP_LIMIT')
     ? parseFloat(elements.orderPriceInput.value)
     : comp.price;
+
+  const stopPrice = (state.orderType === 'STOP_LOSS' || state.orderType === 'STOP_LIMIT')
+    ? parseFloat(elements.orderStopPriceInput.value)
+    : undefined;
 
   const quantity = parseInt(elements.orderQtyInput.value, 10);
 
@@ -1012,23 +1165,31 @@ elements.orderForm.addEventListener('submit', (e) => {
     return;
   }
 
-  if (state.orderType === 'LIMIT' && (!price || price <= 0)) {
-    elements.orderErrorMsg.textContent = 'Invalid limit price';
+  if ((state.orderType === 'LIMIT' || state.orderType === 'STOP_LIMIT') && (!price || price <= 0)) {
+    elements.orderErrorMsg.textContent = 'Valid limit price required';
+    return;
+  }
+
+  if ((state.orderType === 'STOP_LOSS' || state.orderType === 'STOP_LIMIT') && (!stopPrice || stopPrice <= 0)) {
+    elements.orderErrorMsg.textContent = 'Valid stop trigger price required';
     return;
   }
 
   elements.submitOrderBtn.disabled = true;
-  elements.submitOrderBtn.textContent = 'MATCHING...';
+  elements.submitOrderBtn.textContent = 'ROUTING...';
+
+  const prettyType = state.orderType.replace('_', ' ');
 
   socket.emit('order:place', {
     symbol: state.selectedSymbol,
     side: state.orderSide,
     type: state.orderType,
     price,
+    stopPrice,
     quantity
   }, (response) => {
     elements.submitOrderBtn.disabled = false;
-    elements.submitOrderBtn.textContent = `PLACE ${state.orderType} ${state.orderSide}`;
+    elements.submitOrderBtn.textContent = `PLACE ${prettyType} ${state.orderSide}`;
 
     if (!response.success) {
       elements.orderErrorMsg.textContent = response.error || 'Order rejected';
@@ -1043,6 +1204,7 @@ const tabMapping = [
   { btn: elements.tabBtnPortfolio, view: elements.viewPortfolio },
   { btn: elements.tabBtnOpenOrders, view: elements.viewOpenOrders },
   { btn: elements.tabBtnMyTrades, view: elements.viewMyTrades },
+  { btn: elements.tabBtnAchievements, view: elements.viewAchievements },
   { btn: elements.tabBtnLeaderboard, view: elements.viewLeaderboard },
   { btn: elements.tabBtnNews, view: elements.viewNews }
 ];
@@ -1056,6 +1218,109 @@ tabMapping.forEach(({ btn, view }) => {
     btn.classList.add('active');
     view.classList.add('active');
   });
+});
+
+// Toast Notifications
+function showAchievementToast(achievement) {
+  playAchievementTone();
+
+  const toast = document.createElement('div');
+  toast.className = 'toast-item';
+  toast.innerHTML = `
+    <div class="toast-icon">${achievement.icon || '🏆'}</div>
+    <div class="toast-body">
+      <div class="toast-header">Achievement Unlocked</div>
+      <div class="toast-title">${achievement.title}</div>
+      <div class="toast-desc">${achievement.description}</div>
+      <div class="toast-reward">+${achievement.rewardCredits} CR REWARD AWARDED</div>
+    </div>
+  `;
+
+  elements.toastContainer.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateX(100%)';
+    toast.style.transition = 'all 0.3s ease';
+    setTimeout(() => {
+      if (toast.parentNode) toast.parentNode.removeChild(toast);
+    }, 300);
+  }, 5000);
+}
+
+function showStopTriggerToast(order) {
+  playStopTriggerTone();
+
+  const toast = document.createElement('div');
+  toast.className = 'toast-item';
+  toast.style.borderColor = 'var(--amber)';
+  toast.innerHTML = `
+    <div class="toast-icon">⚡</div>
+    <div class="toast-body">
+      <div class="toast-header" style="color:var(--amber)">Stop Order Triggered</div>
+      <div class="toast-title">${order.side} ${order.quantity} ${order.symbol}</div>
+      <div class="toast-desc">Market price reached ${order.triggeredAtPrice ? order.triggeredAtPrice.toFixed(2) : 'trigger threshold'}. Converted to ${order.type === 'STOP_LIMIT' ? 'LIMIT' : 'MARKET'} order.</div>
+    </div>
+  `;
+
+  elements.toastContainer.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateX(100%)';
+    toast.style.transition = 'all 0.3s ease';
+    setTimeout(() => {
+      if (toast.parentNode) toast.parentNode.removeChild(toast);
+    }, 300);
+  }, 4500);
+}
+
+// Day Summary Rendering
+function renderDaySummary(data) {
+  if (!data || !data.userSummary) return;
+
+  elements.summaryDayBadge.textContent = `DAY ${data.day}`;
+  const isProfit = data.userSummary.dayPnL >= 0;
+  const sign = isProfit ? '+' : '';
+  const cls = isProfit ? 'up' : 'down';
+
+  elements.summaryDayPnl.textContent = `${sign}${formatCurrency(data.userSummary.dayPnL)} (${sign}${data.userSummary.dayPnLPercent.toFixed(2)}%)`;
+  elements.summaryDayPnl.className = `summary-hero-val ${cls}`;
+
+  elements.summaryNetWorth.textContent = formatCurrency(data.userSummary.netWorth);
+  elements.summaryCash.textContent = formatCurrency(data.userSummary.cash);
+  elements.summaryStockVal.textContent = formatCurrency(data.userSummary.stockValue);
+  elements.summaryTradesCount.textContent = data.userSummary.tradesToday;
+  elements.summaryVolume.textContent = formatCurrency(data.userSummary.volumeToday);
+
+  if (data.marketPerformance && data.marketPerformance.topGainer) {
+    const tg = data.marketPerformance.topGainer;
+    elements.summaryTopGainer.textContent = `${tg.symbol} (+${tg.changePercent.toFixed(2)}%)`;
+  } else {
+    elements.summaryTopGainer.textContent = '---';
+  }
+
+  // Open modal
+  elements.daySummaryModal.classList.remove('hidden');
+
+  let remaining = data.postMarketSec || 25;
+  const timer = setInterval(() => {
+    remaining--;
+    const s = Math.max(0, remaining % 60);
+    const m = Math.max(0, Math.floor(remaining / 60));
+    elements.summaryNextDayCountdown.textContent = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    if (remaining <= 0) {
+      clearInterval(timer);
+    }
+  }, 1000);
+}
+
+elements.closeDaySummaryBtn.addEventListener('click', () => {
+  elements.daySummaryModal.classList.add('hidden');
+});
+
+elements.dismissDaySummaryBtn.addEventListener('click', () => {
+  elements.daySummaryModal.classList.add('hidden');
 });
 
 // Socket Event Handlers
@@ -1205,6 +1470,22 @@ socket.on('companies:update', (companies) => {
   if (state.selectedSymbol) {
     selectSymbol(state.selectedSymbol);
   }
+});
+
+socket.on('achievement:unlocked', (achievement) => {
+  showAchievementToast(achievement);
+});
+
+socket.on('order:stopTriggered', (order) => {
+  showStopTriggerToast(order);
+});
+
+socket.on('market:daySummary', (summaryData) => {
+  renderDaySummary(summaryData);
+});
+
+socket.on('market:newDay', () => {
+  elements.daySummaryModal.classList.add('hidden');
 });
 
 // App Startup

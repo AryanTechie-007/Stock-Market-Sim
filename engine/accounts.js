@@ -1,7 +1,62 @@
 /**
+ * Achievements Configuration & Definitions
+ */
+export const ACHIEVEMENTS_CONFIG = {
+  FIRST_TRADE: {
+    id: 'FIRST_TRADE',
+    title: 'Market Debut',
+    description: 'Executed your first buy or sell order.',
+    rewardCredits: 250,
+    icon: '⚡'
+  },
+  FIRST_PROFIT: {
+    id: 'FIRST_PROFIT',
+    title: 'In The Green',
+    description: 'Closed a position with a positive realized gain.',
+    rewardCredits: 500,
+    icon: '📈'
+  },
+  HIGH_ROLLER: {
+    id: 'HIGH_ROLLER',
+    title: 'High Roller',
+    description: 'Surpassed 50,000 CR in cumulative trading volume.',
+    rewardCredits: 1000,
+    icon: '💎'
+  },
+  DIVERSIFIED: {
+    id: 'DIVERSIFIED',
+    title: 'Asset Allocator',
+    description: 'Held positions in 3 or more companies simultaneously.',
+    rewardCredits: 750,
+    icon: '🌐'
+  },
+  ALPHA_HUNTER: {
+    id: 'ALPHA_HUNTER',
+    title: 'Alpha Hunter',
+    description: 'Achieved a net portfolio gain of 10% or greater.',
+    rewardCredits: 2500,
+    icon: '🏆'
+  },
+  SPEED_TRADER: {
+    id: 'SPEED_TRADER',
+    title: 'Centurion Trader',
+    description: 'Executed 10 or more trades on the exchange.',
+    rewardCredits: 500,
+    icon: '🔥'
+  },
+  RISK_MANAGER: {
+    id: 'RISK_MANAGER',
+    title: 'Risk Manager',
+    description: 'Placed your first Stop-Loss or Stop-Limit order.',
+    rewardCredits: 300,
+    icon: '🛡️'
+  }
+};
+
+/**
  * Account and Portfolio Management System
  * Manages virtual balances (Credits), holdings, locking for limit orders,
- * realized/unrealized P&L, and leaderboard ranking.
+ * realized/unrealized P&L, achievements, and leaderboard ranking.
  */
 export class AccountManager {
   constructor(initialCredits = 100000, storageManager = null) {
@@ -114,6 +169,10 @@ export class AccountManager {
         lockedCredits: 0,
         holdings: new Map(), // symbol -> { quantity: number, avgPrice: number, lockedQty: number }
         tradeHistory: [], // array of executed trades for this account
+        achievements: new Set(),
+        dayStartNetWorth: startCapital,
+        tradesToday: 0,
+        volumeToday: 0,
         realizedPnL: 0,
         tradesCount: 0,
         volumeTraded: 0,
@@ -213,7 +272,9 @@ export class AccountManager {
       buyer.lockedCredits = Math.max(0, +(buyer.lockedCredits - totalValue).toFixed(2));
     }
     buyer.tradesCount++;
+    buyer.tradesToday = (buyer.tradesToday || 0) + 1;
     buyer.volumeTraded = +(buyer.volumeTraded + totalValue).toFixed(2);
+    buyer.volumeToday = +((buyer.volumeToday || 0) + totalValue).toFixed(2);
 
     let buyerHolding = buyer.holdings.get(trade.symbol);
     if (!buyerHolding) {
@@ -249,7 +310,9 @@ export class AccountManager {
     // Update Seller
     seller.credits = +(seller.credits + totalValue).toFixed(2);
     seller.tradesCount++;
+    seller.tradesToday = (seller.tradesToday || 0) + 1;
     seller.volumeTraded = +(seller.volumeTraded + totalValue).toFixed(2);
+    seller.volumeToday = +((seller.volumeToday || 0) + totalValue).toFixed(2);
 
     let profit = 0;
     const sellerHolding = seller.holdings.get(trade.symbol);
@@ -336,6 +399,12 @@ export class AccountManager {
     const totalPnL = +(totalNetWorth - baseCapital).toFixed(2);
     const totalPnLPercent = baseCapital > 0 ? +((totalPnL / baseCapital) * 100).toFixed(2) : 0;
 
+    const unlockedAchievements = Array.from(user.achievements || []).map(id => ACHIEVEMENTS_CONFIG[id]).filter(Boolean);
+    const allAchievements = Object.values(ACHIEVEMENTS_CONFIG).map(a => ({
+      ...a,
+      unlocked: user.achievements ? user.achievements.has(a.id) : false
+    }));
+
     return {
       userId: user.id,
       name: user.name,
@@ -351,8 +420,150 @@ export class AccountManager {
       tradesCount: user.tradesCount,
       volumeTraded: user.volumeTraded,
       holdings: holdingsList,
-      tradeHistory: user.tradeHistory || []
+      tradeHistory: user.tradeHistory || [],
+      achievements: unlockedAchievements,
+      allAchievements
     };
+  }
+
+  /**
+   * Evaluate and grant achievements for a user
+   * @param {string} userId
+   * @param {Object} currentPrices
+   * @param {string} [eventType] e.g. 'TRADE_SETTLED', 'STOP_ORDER_PLACED'
+   * @param {Object} [eventData]
+   * @returns {Array<Object>} List of newly unlocked achievements
+   */
+  checkAchievements(userId, currentPrices = {}, eventType = '', eventData = {}) {
+    const user = this.getUser(userId);
+    if (!user || user.isNpc) return [];
+
+    if (!user.achievements) user.achievements = new Set();
+    const newlyUnlocked = [];
+
+    const unlock = (achievementKey) => {
+      const ach = ACHIEVEMENTS_CONFIG[achievementKey];
+      if (!ach || user.achievements.has(ach.id)) return;
+
+      user.achievements.add(ach.id);
+      // Award bonus reward credits
+      if (ach.rewardCredits > 0) {
+        user.credits = +(user.credits + ach.rewardCredits).toFixed(2);
+      }
+      if (this.storageManager && typeof this.storageManager.saveAchievement === 'function') {
+        this.storageManager.saveAchievement(userId, ach.id);
+      }
+      this._saveAccount(user);
+      newlyUnlocked.push(ach);
+    };
+
+    // 1. FIRST_TRADE: Any trade completed
+    if (user.tradesCount >= 1) {
+      unlock('FIRST_TRADE');
+    }
+
+    // 2. FIRST_PROFIT: Realized PnL > 0
+    if (user.realizedPnL > 0) {
+      unlock('FIRST_PROFIT');
+    }
+
+    // 3. HIGH_ROLLER: Traded >= 50,000 CR
+    if (user.volumeTraded >= 50000) {
+      unlock('HIGH_ROLLER');
+    }
+
+    // 4. DIVERSIFIED: Hold shares in >= 3 different companies
+    let distinctHoldings = 0;
+    for (const h of user.holdings.values()) {
+      if (h.quantity > 0) distinctHoldings++;
+    }
+    if (distinctHoldings >= 3) {
+      unlock('DIVERSIFIED');
+    }
+
+    // 5. ALPHA_HUNTER: +10% Total portfolio net worth gain
+    let stockValue = 0;
+    for (const [sym, h] of user.holdings.entries()) {
+      if (h.quantity > 0) {
+        stockValue += h.quantity * (currentPrices[sym] || h.avgPrice);
+      }
+    }
+    const currentNW = user.credits + stockValue;
+    const baseCap = user.initialCapital || this.initialCredits;
+    const returnPct = baseCap > 0 ? ((currentNW - baseCap) / baseCap) * 100 : 0;
+    if (returnPct >= 10) {
+      unlock('ALPHA_HUNTER');
+    }
+
+    // 6. SPEED_TRADER: >= 10 trades
+    if (user.tradesCount >= 10) {
+      unlock('SPEED_TRADER');
+    }
+
+    // 7. RISK_MANAGER: Placed stop order
+    if (eventType === 'STOP_ORDER_PLACED') {
+      unlock('RISK_MANAGER');
+    }
+
+    return newlyUnlocked;
+  }
+
+  /**
+   * Generate end of day performance recap for a user
+   * @param {string} userId
+   * @param {Object} currentPrices
+   * @param {number} day
+   */
+  getDaySummary(userId, currentPrices, day) {
+    const user = this.getUser(userId);
+    if (!user) return null;
+    const p = this.getPortfolio(userId, currentPrices);
+    const startNW = user.dayStartNetWorth || user.initialCapital || this.initialCredits;
+    const dayPnL = +(p.totalNetWorth - startNW).toFixed(2);
+    const dayPnLPercent = startNW > 0 ? +((dayPnL / startNW) * 100).toFixed(2) : 0;
+
+    let topHolding = null;
+    let maxVal = 0;
+    for (const h of p.holdings) {
+      if (h.currentValue > maxVal) {
+        maxVal = h.currentValue;
+        topHolding = h.symbol;
+      }
+    }
+
+    return {
+      day,
+      userId: user.id,
+      name: user.name,
+      netWorth: p.totalNetWorth,
+      dayStartNetWorth: startNW,
+      dayPnL,
+      dayPnLPercent,
+      totalPnL: p.totalPnL,
+      totalPnLPercent: p.totalPnLPercent,
+      tradesToday: user.tradesToday || 0,
+      volumeToday: user.volumeToday || 0,
+      cash: p.credits,
+      stockValue: p.stockValue,
+      topHolding,
+      unlockedAchievements: Array.from(user.achievements || [])
+    };
+  }
+
+  /**
+   * Reset daily accumulators and snapshot starting net worth for the new day
+   * @param {number} day
+   * @param {Object} currentPrices
+   */
+  onNewDay(day, currentPrices) {
+    for (const user of this.accounts.values()) {
+      const p = this.getPortfolio(user.id, currentPrices);
+      if (p) {
+        user.dayStartNetWorth = p.totalNetWorth;
+      }
+      user.tradesToday = 0;
+      user.volumeToday = 0;
+    }
   }
 
   getLeaderboard(currentPrices, limit = 10) {

@@ -7,6 +7,7 @@ export class OrderBook {
     this.bids = []; // Buy orders: sorted price DESC, timestamp ASC
     this.asks = []; // Sell orders: sorted price ASC, timestamp ASC
     this.orders = new Map(); // orderId -> order
+    this.stopOrders = new Map(); // orderId -> resting stop order
   }
 
   /**
@@ -188,11 +189,64 @@ export class OrderBook {
     this.asks.splice(idx, 0, order);
   }
 
+  /**
+   * Add a resting stop-loss or stop-limit order outside the active matching queue
+   * @param {Object} order
+   */
+  addStopOrder(order) {
+    order.quantity = Math.max(0, Math.floor(order.quantity));
+    order.originalQuantity = order.quantity;
+    order.filledQuantity = 0;
+    order.timestamp = order.timestamp || Date.now();
+    order.status = 'STOP_RESTING';
+
+    this.stopOrders.set(order.id, order);
+    this.orders.set(order.id, order);
+    return order;
+  }
+
+  /**
+   * Evaluate resting stop orders against the latest trade execution price
+   * @param {number} lastTradedPrice
+   * @returns {Array<Object>} list of triggered stop orders
+   */
+  checkStopOrders(lastTradedPrice) {
+    const triggered = [];
+    if (!lastTradedPrice || this.stopOrders.size === 0) return triggered;
+
+    for (const [orderId, order] of this.stopOrders.entries()) {
+      let shouldTrigger = false;
+
+      if (order.side === 'BUY') {
+        // Buy stop triggers when market price rises to or above stopPrice (e.g. breakout / cover)
+        if (lastTradedPrice >= order.stopPrice) {
+          shouldTrigger = true;
+        }
+      } else if (order.side === 'SELL') {
+        // Sell stop triggers when market price falls to or below stopPrice (e.g. stop-loss)
+        if (lastTradedPrice <= order.stopPrice) {
+          shouldTrigger = true;
+        }
+      }
+
+      if (shouldTrigger) {
+        this.stopOrders.delete(orderId);
+        order.triggeredAtPrice = lastTradedPrice;
+        order.triggeredAt = Date.now();
+        triggered.push(order);
+      }
+    }
+
+    return triggered;
+  }
+
   cancelOrder(orderId) {
     const order = this.orders.get(orderId);
     if (!order) return null;
 
-    if (order.side === 'BUY') {
+    if (this.stopOrders.has(orderId)) {
+      this.stopOrders.delete(orderId);
+    } else if (order.side === 'BUY') {
       const idx = this.bids.findIndex(o => o.id === orderId);
       if (idx !== -1) this.bids.splice(idx, 1);
     } else {
