@@ -513,5 +513,44 @@ assert.strictEqual(reloadedHolding.shortAvgPrice, 420.50);
 sqliteMargin.close();
 console.log('[PASS] SQLite storage seamlessly persisted and restored margin loans and short positions');
 
-console.log('\n[SUCCESS] ALL 15 CORE ENGINE & TIER 3 (v0.4) TESTS PASSED!\n');
+// Test 16: Multi-Timeframe Candlestick Engine & Resolution Buffers
+console.log('\nTest 16: Multi-Timeframe Candlestick Engine & Resolution Buffers');
+const tfClock = new MarketClock();
+const tfEngine = new MatchingEngine(['AUTO'], new AccountManager(10000), tfClock);
+const tfMarket = new MarketManager(tfClock, tfEngine);
+
+for (const tf of ['1s', '5s', '15s', '1m', '5m']) {
+  const candles = tfMarket.getCandles('AUTO', tf);
+  assert.strictEqual(Array.isArray(candles), true);
+  assert.strictEqual(candles.length > 0, true);
+  const last = candles[candles.length - 1];
+  assert.strictEqual(typeof last.open, 'number');
+  assert.strictEqual(typeof last.close, 'number');
+  assert.strictEqual(typeof last.high, 'number');
+  assert.strictEqual(typeof last.low, 'number');
+  assert.strictEqual(typeof last.volume, 'number');
+}
+
+// Emulate trade execution and verify all timeframe active candles update
+tfMarket._handleTrade({
+  id: 'tr_tf_1',
+  symbol: 'AUTO',
+  price: 525.50,
+  quantity: 50,
+  buyerId: 'buyer_tf',
+  sellerId: 'seller_tf'
+});
+
+for (const tf of ['1s', '5s', '15s', '1m', '5m']) {
+  const candles = tfMarket.getCandles('AUTO', tf);
+  const active = candles[candles.length - 1];
+  assert.strictEqual(active.close, 525.50);
+  assert.strictEqual(active.high >= 525.50, true);
+  assert.strictEqual(active.volume >= 50, true);
+}
+console.log('[PASS] Multi-timeframe candlestick engine accurately aggregates and serves all resolutions');
+
+console.log('\n[SUCCESS] ALL 16 CORE ENGINE & ADVANCED CAPABILITIES TESTS PASSED!\n');
+process.exit(0);
+
 

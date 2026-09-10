@@ -2,17 +2,17 @@
 
 ## Repository Metadata
 
-- **Current Pushed Version:** v0.4
+- **Current Pushed Version:** v0.5
 - **Username:** AryanTechie-007
-- **Push Timestamp:** 2026-09-10 22:20:00 IST (UTC+05:30)
-- **Current Status:** Deployed Build (Tier 3 - Advanced Execution Mechanics & Margin Trading Release)
+- **Push Timestamp:** 2026-09-10 22:30:00 IST (UTC+05:30)
+- **Current Status:** Deployed Build (Technical Analysis & Multi-Timeframe Charting Release)
 - **Repository:** https://github.com/AryanTechie-007/Stock-Market-Sim
 
 ---
 
 ## Overview
 
-MarketArena is a high-performance, gamified financial market simulator and quantitative trading terminal built with Node.js, Express, Socket.IO, and a vanilla JavaScript frontend terminal. The platform provides a realistic, continuous double-auction equity exchange featuring FIFO price-time order matching, conditional stop and bracket orders, margin leverage, short selling, an automated liquidation engine, multi-asset portfolio accounting, simulated market clock cycles, eight autonomous algorithmic NPC traders, an achievements milestone engine, end-of-day settlement summaries, and native relational state persistence.
+MarketArena is a high-performance, gamified financial market simulator and quantitative trading terminal built with Node.js, Express, Socket.IO, and a vanilla JavaScript frontend terminal. The platform provides a realistic, continuous double-auction equity exchange featuring FIFO price-time order matching, conditional stop and bracket orders, margin leverage, short selling, an automated liquidation engine, multi-asset portfolio accounting, multi-timeframe candlestick generation, institutional-grade technical analysis indicators, simulated market clock cycles, eight autonomous algorithmic NPC traders, an achievements milestone engine, end-of-day settlement summaries, and native relational state persistence.
 
 ---
 
@@ -31,7 +31,7 @@ For a detailed roadmap of queued deep features, see [Future_Scope.md](Future_Sco
 
 ## Architecture and Core Modules
 
-The system is partitioned into modular subsystems within the `engine/` and `traders/` directories:
+The system is partitioned into modular subsystems within the `engine/`, `traders/`, and `public/` directories:
 
 ### 1. Order Matching Engine (`engine/matching.js`, `engine/orderbook.js`)
 - **Execution Mechanism:** Strict Price-Time Priority (FIFO) matching algorithm.
@@ -56,7 +56,28 @@ The system is partitioned into modular subsystems within the `engine/` and `trad
 - **Self-Trade Prevention:** Prevents matching of orders submitted by the same participant ID.
 - **Order Cancellation:** Allows cancellation of resting limit, stop, and trailing orders, immediately unlocking reserved capital or shares.
 
-### 2. Account and Portfolio Management (`engine/accounts.js`)
+### 2. Multi-Timeframe Candlestick Engine (`engine/market.js`)
+- **Supported Timeframes:**
+  - **1s:** Ultra-high frequency scalping resolution.
+  - **5s (Default):** Tactical intraday execution timeframe.
+  - **15s:** Short-swing intraday momentum resolution.
+  - **1m:** Standard intraday trend resolution.
+  - **5m:** Macro structural trend resolution.
+- **Continuous Aggregation:**
+  - Ticks incoming trade executions across all timeframe buckets simultaneously.
+  - Evaluates bar completion on a 1-second cadence, maintaining up to 200 historical candles per timeframe.
+  - Delivers requested resolutions on-demand via the WebSocket `chart:history` API.
+
+### 3. Institutional Technical Analysis Engine (`public/js/indicators.js`)
+Zero-dependency mathematical library computing real-time technical indicators over OHLCV arrays:
+- **Simple Moving Average (SMA 20, SMA 50):** Arithmetic mean over 20 and 50 periods, rendered in amber and sky blue.
+- **Exponential Moving Average (EMA 9, EMA 21):** Weighted moving averages with weighting multiplier k = 2 / (N + 1), rendered in purple and emerald.
+- **Bollinger Bands (20, 2):** 20-period SMA middle band with symmetric plus/minus 2 standard deviation upper and lower bands and shaded volatility ribbon.
+- **Volume Weighted Average Price (VWAP):** Cumulative typical price times volume divided by cumulative volume, rendered as a continuous cyan benchmark curve.
+- **Relative Strength Index (RSI 14):** Wilder's smoothed momentum oscillator plotted in a dedicated lower panel with 70 overbought and 30 oversold dashed reference lines.
+- **Moving Average Convergence Divergence (MACD 12, 26, 9):** Fast 12 EMA minus slow 26 EMA (MACD line), 9-period signal line, and color-coded momentum histogram bars.
+
+### 4. Account and Portfolio Management (`engine/accounts.js`)
 - **Initial Capital:** Default allocation of 100,000.00 Credits (CR) per human user.
 - **Double-Entry Settlement:**
   - Executes instant cash, equity, and margin loan settlement upon trade matching.
@@ -75,16 +96,16 @@ The system is partitioned into modular subsystems within the `engine/` and `trad
 - **Daily Performance Snapshot:** Tracks starting net worth per day, day P&L, day volume, and daily trade counts for end-of-day settlement.
 - **Leaderboard Calculation:** Ranks all human and NPC participants by total net worth and total return.
 
-### 3. Relational Persistence (`engine/sqlite-storage.js`)
+### 5. Relational Persistence (`engine/sqlite-storage.js`)
 - **Database Engine:** Node.js native `node:sqlite` (`DatabaseSync`).
 - **Relational Tables:**
   - `accounts`: User identification, starting capital, current credits, locked credits, margin loans, leverage settings, realized P&L, trades count, volume.
   - `holdings`: Foreign-key bound user positions per symbol, long share quantity, average cost price, locked quantity, short quantity, short average price, and locked short quantity.
   - `trade_history`: Foreign-key bound chronological transaction log with execution timestamps, counterparty metadata, leverage, and short flags.
   - `achievements`: Foreign-key bound records of unlocked badges and milestone timestamps.
-- **Bootstrap Restoration:** Automatically reconstructs all active human trader portfolios, holdings (long and short), margin balances, transaction histories, and unlocked achievements upon server start.
+- **Bootstrap Restoration:** Automatically reconstructs all active human trader portfolios, holdings, margin balances, transaction histories, and unlocked achievements upon server start.
 
-### 4. Market Clock and Phased Trading (`engine/clock.js`)
+### 6. Market Clock and Phased Trading (`engine/clock.js`)
 - **Day and Session State Machine:**
   - **PRE_MARKET (20s):** Orders can be queued; matching is halted.
   - **REGULAR_HOURS (180s / 3 min):** Active trading session with live continuous order execution. Simulated clock runs from 09:30 AM to 04:00 PM.
@@ -92,43 +113,27 @@ The system is partitioned into modular subsystems within the `engine/` and `trad
 - **Session Transitions:** Emits opening bell, closing bell, and day recap events across the WebSocket network.
 - **Day Rollover:** Resets intraday accumulators, snapshots new opening net worth, and transitions cleanly into the next trading day.
 
-### 5. Market and Stock Universe (`engine/market.js`)
-- Five corporate entities across diverse market sectors:
-  - **AUTO (AutoCorp):** Automotive and Electric Vehicles.
-  - **SOLR (SolarGen):** Clean energy and solar utility infrastructure.
-  - **BYTE (ByteWorks):** Cloud computing, hardware, and AI systems.
-  - **NBNK (National Bank):** Financial institution and treasury banking.
-  - **MEDL (MedLife):** Pharmaceuticals and clinical biotechnology.
-- **Candlestick Aggregator:** Rolls OHLC (Open, High, Low, Close) candles at 5-second intervals with persistent rolling history for charting.
-- **News and Sentiment Generator:** Periodic breaking news engine with fundamental valuation and market sentiment adjustments.
-- **Daily Performance Metrics:** Computes top gainer, top loser, and cumulative daily exchange volume.
-
-### 6. Algorithmic NPC Traders (`traders/`)
+### 7. Algorithmic NPC Traders (`traders/`)
 Eight autonomous trading bots interact with the matching engine to provide realistic market depth and price discovery:
-- **Market Makers (MM Alpha Securities, Apex Liquidity LP):**
-  - Provide continuous two-sided limit orders across bids and asks around the mid-price.
-  - Dynamically widen spreads by up to 2.2x during breaking news or elevated volatility to guard against adverse selection.
-  - Rebalance inventory skew when holdings deviate from neutral inventory targets.
-- **Momentum Traders (Velocity Quant Bot, TrendRider Algorithmic):**
-  - Calculate dual Simple Moving Averages (Fast 3-period vs Slow 8-period) to detect genuine momentum breakouts.
-  - React directly to breaking news catalysts with high-conviction market executions.
-- **Value Investors (DeepValue Asset Mgmt, Horizon Fundamental Fund):**
-  - Evaluate current prices against company intrinsic value with defined safety margins.
-  - Automatically re-evaluate discount and premium levels upon breaking corporate news updates.
-- **Noise / Retail Traders (Retail Swarm Alpha, Retail Swarm Beta):**
-  - Simulate stochastic retail order flow.
+- **Market Makers (MM Alpha Securities, Apex Liquidity LP):** Continuous two-sided limit orders with dynamic volatility spread expansion.
+- **Momentum Traders (Velocity Quant Bot, TrendRider Algorithmic):** Dual SMA momentum breakouts and breaking news catalyst executions.
+- **Value Investors (DeepValue Asset Mgmt, Horizon Fundamental Fund):** Intrinsic value evaluation with safety margins.
+- **Noise / Retail Traders (Retail Swarm Alpha, Retail Swarm Beta):** Stochastic retail order flow.
 
 ---
 
 ## User Interface and Trading Terminal (`public/`)
 
-The web client provides a desktop terminal layout:
+The web client provides a professional desktop terminal layout:
 - **Top Bar:** Market clock phase display, simulated time, session countdown timer, global ticker tape, audio mute toggle, callsign manager.
 - **Watchlist and Fundamentals:** Multi-asset ticker list with real-time percentage changes, company descriptions, P/E ratios, market caps, and sentiment indicators.
-- **Interactive Candlestick & Volume Chart:**
+- **Interactive Candlestick & Volume Chart with Technical Suite:**
   - HTML5 Canvas chart displaying real-time OHLC candlestick bodies and wicks.
-  - Integrated Volume Histogram sub-panel aligned to the bottom.
-  - Interactive crosshair tracking with floating OHLCV inspection HUD.
+  - Integrated Volume Histogram sub-panel aligned to the bottom of the price chart.
+  - **Timeframe Selector:** Instant resolution switching between `1s`, `5s`, `15s`, `1m`, and `5m`.
+  - **Indicator Toolbar:** Toggles for `SMA`, `EMA`, `BOLL`, `VWAP`, `RSI`, and `MACD`.
+  - **Oscillator Sub-Panel:** Dedicated lower canvas track displaying RSI 14 with 70/30 bands or MACD lines with zero-axis histogram bars.
+  - **Interactive Crosshair HUD:** Hovering over any candle displays exact timestamp, OHLCV values, and live readings for all enabled technical indicators.
   - Current market price dashed reference line and active price tag.
 - **Live Execution Tape:** Real-time stream of matched trades showing price, quantity, taker side, and execution timestamps.
 - **Order Entry Pad:**
@@ -199,15 +204,21 @@ http://localhost:3000
 
 ## Automated Verification and Tests
 
-To execute the unit and integration test suite:
+To execute the core engine unit and integration test suite:
 ```bash
 node tests/engine.test.js
+```
+
+To execute the technical indicators mathematical verification suite:
+```bash
+node tests/indicators.test.js
 ```
 
 To execute the live WebSocket integration tests:
 ```bash
 node tests/tier2_e2e_simulation.js
 node tests/v04_e2e_simulation.js
+node tests/v05_e2e_simulation.js
 ```
 
 ### Verified Test Cases:
@@ -226,6 +237,13 @@ node tests/v04_e2e_simulation.js
 13. Short selling, margin collateral verification, and buy-to-cover P&L settlement.
 14. Margin borrowing (up to 5x), maintenance margin monitoring, and automated forced liquidation.
 15. SQLite persistence of margin loans, short positions, and short cost basis.
+16. Multi-timeframe candlestick generation across 1s, 5s, 15s, 1m, and 5m resolutions.
+17. Indicator math: Simple Moving Average (SMA 20/50).
+18. Indicator math: Exponential Moving Average (EMA 9/21).
+19. Indicator math: Bollinger Bands standard deviation envelopes and bandwidth.
+20. Indicator math: Volume Weighted Average Price (VWAP) volume-weighted accumulation.
+21. Indicator math: Relative Strength Index (RSI 14) boundary conditions and Wilder smoothing.
+22. Indicator math: Moving Average Convergence Divergence (MACD 12/26/9) lines and histogram.
 
 ---
 
@@ -234,4 +252,5 @@ node tests/v04_e2e_simulation.js
 - **v0.1 (Pushed to GitHub):** Initial release featuring FIFO matching engine, account management, multi-archetype NPC bots, market clock cycle, and full-featured web trading terminal.
 - **v0.2 (Pushed to GitHub):** Native SQLite relational persistence, personal trade history ledger and terminal tab, advanced candlestick and volume charting with crosshair inspection, and harmonic audio feedback.
 - **v0.3 (Pushed to GitHub):** Advanced order types (Stop Loss & Stop Limit), 7 gamified achievements with credit rewards and HUD toasts, multi-day progression with End-of-Day recap modal, smarter NPC behavior (volatility spreads, news catalysts, SMA momentum), and full 10-test automated suite.
-- **v0.4 (Current Release):** Advanced execution mechanics: Trailing Stop orders with dynamic peak/trough ratcheting, OCO (One-Cancels-the-Other) bracket orders with mutual counterpart cancellation, Margin Trading with up to 5x leverage, Short Selling with borrow collateral mechanics, automated maintenance margin monitoring and forced liquidation engine, SQLite schema migrations for margin loans and short positions, and expanded 15-test automated verification suite.
+- **v0.4 (Pushed to GitHub):** Advanced execution mechanics: Trailing Stop orders with dynamic peak/trough ratcheting, OCO (One-Cancels-the-Other) bracket orders with mutual counterpart cancellation, Margin Trading with up to 5x leverage, Short Selling with borrow collateral mechanics, automated maintenance margin monitoring and forced liquidation engine, SQLite schema migrations for margin loans and short positions.
+- **v0.5 (Current Release):** Technical Analysis & Multi-Timeframe Charting Suite: Multi-timeframe candlestick engine (1s, 5s, 15s, 1m, 5m), overlay indicators (SMA 20/50, EMA 9/21, Bollinger Bands with shaded channel, session VWAP), lower Oscillator sub-panel (RSI 14 with 70/30 thresholds, MACD with signal line and colored histogram), expanded interactive HUD crosshair, and mathematical indicator test suite.

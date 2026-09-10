@@ -197,6 +197,24 @@ export class MarketManager extends EventEmitter {
     this.clock = clock;
     this.matchingEngine = matchingEngine;
     this.companies = new Map();
+
+    // Multi-timeframe candlestick support
+    this.timeframes = ['1s', '5s', '15s', '1m', '5m'];
+    this.timeframeSecs = {
+      '1s': 1,
+      '5s': 5,
+      '15s': 15,
+      '1m': 60,
+      '5m': 300
+    };
+    this.candleBuffers = new Map(); // timeframe -> Map<symbol, Array<Candle>>
+    this.activeCandles = new Map(); // timeframe -> Map<symbol, Candle>
+    for (const tf of this.timeframes) {
+      this.candleBuffers.set(tf, new Map());
+      this.activeCandles.set(tf, new Map());
+    }
+
+    // Backwards compatibility mappings (defaults to '5s')
     this.candles = new Map(); // symbol -> Array of { time, open, high, low, close, volume }
     this.currentCandles = new Map(); // symbol -> active candle
     this.newsFeed = [];
@@ -211,6 +229,14 @@ export class MarketManager extends EventEmitter {
 
   _initializeCompanies() {
     const nowSec = Math.floor(Date.now() / 1000);
+    const starterCounts = {
+      '1s': 60,
+      '5s': 45,
+      '15s': 30,
+      '1m': 20,
+      '5m': 15
+    };
+
     for (const comp of INITIAL_COMPANIES) {
       this.companies.set(comp.symbol, {
         ...comp,
@@ -218,43 +244,56 @@ export class MarketManager extends EventEmitter {
         tradesCount: 0
       });
 
-      // Initialize with historical starter candles
-      const starterCandles = [];
-      let p = comp.basePrice;
-      const totalStarter = 30;
-      for (let i = totalStarter; i >= 1; i--) {
-        const cTime = nowSec - (i * 10);
-        const delta = (Math.random() - 0.5) * (comp.basePrice * comp.volatility * 0.8);
-        const open = +(p).toFixed(2);
-        const close = +(p + delta).toFixed(2);
-        const high = +(Math.max(open, close) + Math.random() * (comp.basePrice * 0.005)).toFixed(2);
-        const low = +(Math.min(open, close) - Math.random() * (comp.basePrice * 0.005)).toFixed(2);
-        starterCandles.push({
-          time: cTime,
-          open,
-          high,
-          low,
-          close,
-          volume: Math.floor(Math.random() * 200 + 20)
+      let latestClose = comp.basePrice;
+
+      // Generate historical starter series for all supported resolutions
+      for (const tf of this.timeframes) {
+        const interval = this.timeframeSecs[tf];
+        const count = starterCounts[tf] || 30;
+        const starterList = [];
+        let p = comp.basePrice;
+
+        for (let i = count; i >= 1; i--) {
+          const cTime = nowSec - (i * interval);
+          const delta = (Math.random() - 0.5) * (comp.basePrice * comp.volatility * (0.5 + Math.sqrt(interval / 5)));
+          const open = +(p).toFixed(2);
+          const close = +(p + delta).toFixed(2);
+          const high = +(Math.max(open, close) + Math.random() * (comp.basePrice * 0.003 * Math.sqrt(interval))).toFixed(2);
+          const low = +(Math.min(open, close) - Math.random() * (comp.basePrice * 0.003 * Math.sqrt(interval))).toFixed(2);
+          starterList.push({
+            time: cTime,
+            open,
+            high,
+            low,
+            close,
+            volume: Math.floor((Math.random() * 200 + 20) * Math.max(1, interval / 5))
+          });
+          p = close;
+        }
+
+        this.candleBuffers.get(tf).set(comp.symbol, starterList);
+        const last = starterList[starterList.length - 1];
+        this.activeCandles.get(tf).set(comp.symbol, {
+          time: nowSec,
+          open: last.close,
+          high: last.close,
+          low: last.close,
+          close: last.close,
+          volume: 0
         });
-        p = close;
+
+        if (tf === '5s') latestClose = last.close;
       }
 
-      this.candles.set(comp.symbol, starterCandles);
-      const lastCandle = starterCandles[starterCandles.length - 1];
-      this.currentCandles.set(comp.symbol, {
-        time: nowSec,
-        open: lastCandle.close,
-        high: lastCandle.close,
-        low: lastCandle.close,
-        close: lastCandle.close,
-        volume: 0
-      });
+      // Populate default 5s pointers for backwards compatibility
+      this.candles.set(comp.symbol, this.candleBuffers.get('5s').get(comp.symbol));
+      this.currentCandles.set(comp.symbol, this.activeCandles.get('5s').get(comp.symbol));
+
       const c = this.companies.get(comp.symbol);
-      c.price = lastCandle.close;
-      c.openPrice = lastCandle.close;
-      c.highPrice = Math.max(...starterCandles.map(x => x.high));
-      c.lowPrice = Math.min(...starterCandles.map(x => x.low));
+      c.price = latestClose;
+      c.openPrice = latestClose;
+      c.highPrice = Math.max(...this.candles.get(comp.symbol).map(x => x.high));
+      c.lowPrice = Math.min(...this.candles.get(comp.symbol).map(x => x.low));
     }
   }
 
@@ -301,10 +340,10 @@ export class MarketManager extends EventEmitter {
       this.emit('companiesUpdate', this.getAllCompanies());
     });
 
-    // 5-second candle roll
+    // Multi-timeframe 1-second tick evaluator
     setInterval(() => {
-      this._rollCandles();
-    }, 5000);
+      this._tickCandles();
+    }, 1000);
   }
 
   _startNewsGenerator() {
@@ -366,13 +405,18 @@ export class MarketManager extends EventEmitter {
     if (comp.highPrice === null || trade.price > comp.highPrice) comp.highPrice = trade.price;
     if (comp.lowPrice === null || trade.price < comp.lowPrice) comp.lowPrice = trade.price;
 
-    // Update active candle
-    const activeCandle = this.currentCandles.get(trade.symbol);
-    if (activeCandle) {
-      activeCandle.close = trade.price;
-      activeCandle.high = Math.max(activeCandle.high, trade.price);
-      activeCandle.low = Math.min(activeCandle.low, trade.price);
-      activeCandle.volume += trade.quantity;
+    // Update active candles across all timeframe resolutions
+    for (const tf of this.timeframes) {
+      const tfActiveMap = this.activeCandles.get(tf);
+      if (tfActiveMap) {
+        const activeCandle = tfActiveMap.get(trade.symbol);
+        if (activeCandle) {
+          activeCandle.close = trade.price;
+          activeCandle.high = Math.max(activeCandle.high, trade.price);
+          activeCandle.low = Math.min(activeCandle.low, trade.price);
+          activeCandle.volume += trade.quantity;
+        }
+      }
     }
 
     // Add to trade history feed
@@ -393,24 +437,43 @@ export class MarketManager extends EventEmitter {
     });
   }
 
-  _rollCandles() {
+  _tickCandles() {
     const nowSec = Math.floor(Date.now() / 1000);
-    for (const [sym, active] of this.currentCandles.entries()) {
-      const candlesList = this.candles.get(sym);
-      if (!candlesList) continue;
 
-      candlesList.push({ ...active });
-      if (candlesList.length > 200) candlesList.shift();
+    for (const tf of this.timeframes) {
+      const tfSec = this.timeframeSecs[tf];
+      const tfActiveMap = this.activeCandles.get(tf);
+      const tfBuffers = this.candleBuffers.get(tf);
+      if (!tfActiveMap || !tfBuffers) continue;
 
-      // Start new candle from previous close
-      this.currentCandles.set(sym, {
-        time: nowSec,
-        open: active.close,
-        high: active.close,
-        low: active.close,
-        close: active.close,
-        volume: 0
-      });
+      for (const [sym, active] of tfActiveMap.entries()) {
+        if (nowSec - active.time >= tfSec) {
+          const buffer = tfBuffers.get(sym);
+          if (buffer) {
+            buffer.push({ ...active });
+            if (buffer.length > 200) buffer.shift();
+          }
+
+          tfActiveMap.set(sym, {
+            time: nowSec,
+            open: active.close,
+            high: active.close,
+            low: active.close,
+            close: active.close,
+            volume: 0
+          });
+        }
+      }
+    }
+
+    // Synchronize default 5s backward-compatible references
+    const defBuffers = this.candleBuffers.get('5s');
+    const defActives = this.activeCandles.get('5s');
+    if (defBuffers && defActives) {
+      for (const [sym, active] of defActives.entries()) {
+        this.currentCandles.set(sym, active);
+        this.candles.set(sym, defBuffers.get(sym));
+      }
     }
   }
 
@@ -446,10 +509,11 @@ export class MarketManager extends EventEmitter {
     return prices;
   }
 
-  getCandles(symbol) {
-    const list = this.candles.get(symbol) || [];
-    const active = this.currentCandles.get(symbol);
-    return active ? [...list, active] : list;
+  getCandles(symbol, timeframe = '5s') {
+    const tf = this.timeframes.includes(timeframe) ? timeframe : '5s';
+    const buffer = (this.candleBuffers.get(tf) && this.candleBuffers.get(tf).get(symbol)) || [];
+    const active = this.activeCandles.get(tf) && this.activeCandles.get(tf).get(symbol);
+    return active ? [...buffer, active] : buffer;
   }
 
   getRecentTrades() {

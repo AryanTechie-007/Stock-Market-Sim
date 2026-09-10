@@ -82,14 +82,6 @@ Features completed in releases (e.g. SQLite persistence, achievements, multi-day
 - Fully responsive mobile and tablet interface with touch-optimized order entry drawers.
 - Dedicated mobile view featuring quick-swipe ticker navigation.
 
-### Technical Analysis Tools
-- Technical indicators overlaid directly onto the candlestick chart:
-  - Simple & Exponential Moving Averages (SMA 20/50, EMA 9/21)
-  - Relative Strength Index (RSI 14)
-  - Volume Weighted Average Price (VWAP)
-  - Bollinger Bands
-- Multi-timeframe selection (1s, 5s, 15s, 1m, 5m candles).
-
 ### Workspace Customization
 - Modular, draggable dock panels allowing users to arrange order books, charts, tapes, and watchlists according to personal workflow preferences.
 - Audio synthesis control panel allowing granular volume adjustment for fills, tape ticks, news alerts, and session bells.

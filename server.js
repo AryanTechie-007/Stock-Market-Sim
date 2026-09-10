@@ -331,8 +331,8 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('chart:history', ({ symbol }, callback) => {
-    const candles = marketManager.getCandles(symbol);
+  socket.on('chart:history', ({ symbol, timeframe }, callback) => {
+    const candles = marketManager.getCandles(symbol, timeframe || '5s');
     if (callback) {
       callback(candles);
     }

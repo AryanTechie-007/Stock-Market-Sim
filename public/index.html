@@ -92,6 +92,26 @@
             <span>Vol <b id="heroVolume">0</b></span>
           </div>
         </div>
+
+        <div class="chart-toolbar">
+          <div class="tf-group">
+            <span class="toolbar-label">TF</span>
+            <button type="button" class="tf-btn" data-tf="1s">1s</button>
+            <button type="button" class="tf-btn on" data-tf="5s">5s</button>
+            <button type="button" class="tf-btn" data-tf="15s">15s</button>
+            <button type="button" class="tf-btn" data-tf="1m">1m</button>
+            <button type="button" class="tf-btn" data-tf="5m">5m</button>
+          </div>
+          <div class="ind-group">
+            <span class="toolbar-label">IND</span>
+            <button type="button" class="ind-btn" id="indSmaBtn" title="Simple Moving Average (20/50)">SMA</button>
+            <button type="button" class="ind-btn" id="indEmaBtn" title="Exponential Moving Average (9/21)">EMA</button>
+            <button type="button" class="ind-btn" id="indBollBtn" title="Bollinger Bands (20, 2)">BOLL</button>
+            <button type="button" class="ind-btn" id="indVwapBtn" title="Volume Weighted Average Price">VWAP</button>
+            <button type="button" class="ind-btn" id="indRsiBtn" title="Relative Strength Index (14)">RSI</button>
+            <button type="button" class="ind-btn" id="indMacdBtn" title="Moving Average Convergence Divergence">MACD</button>
+          </div>
+        </div>
       </div>
 
       <!-- Real-Time Interactive Canvas Chart -->
@@ -452,6 +472,7 @@
     </div>
   </div>
 
+  <script type="module" src="/js/indicators.js"></script>
   <script src="/js/app.js"></script>
 </body>
 </html>

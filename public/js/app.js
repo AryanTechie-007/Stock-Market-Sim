@@ -25,7 +25,16 @@ const state = {
   leaderboard: [],
   newsFeed: [],
   soundEnabled: true,
-  activeTab: 'portfolio'
+  activeTab: 'portfolio',
+  activeTimeframe: '5s',
+  indicators: {
+    sma: false,
+    ema: false,
+    boll: false,
+    vwap: false,
+    rsi: false,
+    macd: false
+  }
 };
 
 // Subtle Web Audio Synthesizer
@@ -210,6 +219,12 @@ const elements = {
   heroVolume: document.getElementById('heroVolume'),
   chartCanvas: document.getElementById('marketChartCanvas'),
   chartContainer: document.getElementById('chartContainer'),
+  indSmaBtn: document.getElementById('indSmaBtn'),
+  indEmaBtn: document.getElementById('indEmaBtn'),
+  indBollBtn: document.getElementById('indBollBtn'),
+  indVwapBtn: document.getElementById('indVwapBtn'),
+  indRsiBtn: document.getElementById('indRsiBtn'),
+  indMacdBtn: document.getElementById('indMacdBtn'),
   tradesFeedContainer: document.getElementById('tradesFeedContainer'),
   // Order Form
   sideBuyTab: document.getElementById('sideBuyTab'),
@@ -339,6 +354,36 @@ function initChart() {
     drawChart();
   });
 
+  // Timeframe selector buttons
+  document.querySelectorAll('.tf-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const tf = btn.getAttribute('data-tf');
+      if (!tf) return;
+      state.activeTimeframe = tf;
+      document.querySelectorAll('.tf-btn').forEach(b => b.classList.toggle('on', b === btn));
+      loadChartData(state.selectedSymbol);
+    });
+  });
+
+  // Technical indicator toggle buttons
+  function bindIndicator(btn, key) {
+    if (!btn) return;
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      state.indicators[key] = !state.indicators[key];
+      btn.classList.toggle('on', state.indicators[key]);
+      drawChart();
+    });
+  }
+
+  bindIndicator(elements.indSmaBtn, 'sma');
+  bindIndicator(elements.indEmaBtn, 'ema');
+  bindIndicator(elements.indBollBtn, 'boll');
+  bindIndicator(elements.indVwapBtn, 'vwap');
+  bindIndicator(elements.indRsiBtn, 'rsi');
+  bindIndicator(elements.indMacdBtn, 'macd');
+
   window.addEventListener('resize', handleResize);
   setTimeout(handleResize, 50);
 }
@@ -354,36 +399,72 @@ function drawChart() {
   ctx.clearRect(0, 0, w, h);
   if (!currentCandlesList || currentCandlesList.length === 0) return;
 
-  const candles = currentCandlesList.slice(-50);
+  const allCandles = currentCandlesList;
+  const visibleCount = Math.min(50, allCandles.length);
+  const startIndex = allCandles.length - visibleCount;
+  const candles = allCandles.slice(startIndex);
+
+  // Compute full technical indicators across entire candle history for unbroken warmups
+  const ind = (typeof window !== 'undefined' && window.Indicators) ? window.Indicators : null;
+  const sma20Full = (state.indicators.sma && ind) ? ind.calculateSMA(allCandles, 20) : null;
+  const sma50Full = (state.indicators.sma && ind) ? ind.calculateSMA(allCandles, 50) : null;
+  const ema9Full = (state.indicators.ema && ind) ? ind.calculateEMA(allCandles, 9) : null;
+  const ema21Full = (state.indicators.ema && ind) ? ind.calculateEMA(allCandles, 21) : null;
+  const bollFull = (state.indicators.boll && ind) ? ind.calculateBollingerBands(allCandles, 20, 2) : null;
+  const vwapFull = (state.indicators.vwap && ind) ? ind.calculateVWAP(allCandles) : null;
+  const rsiFull = (state.indicators.rsi && ind) ? ind.calculateRSI(allCandles, 14) : null;
+  const macdFull = (state.indicators.macd && ind) ? ind.calculateMACD(allCandles, 12, 26, 9) : null;
+
+  // Slice indicators to align with visible candles window
+  const sma20 = sma20Full ? sma20Full.slice(startIndex) : null;
+  const sma50 = sma50Full ? sma50Full.slice(startIndex) : null;
+  const ema9 = ema9Full ? ema9Full.slice(startIndex) : null;
+  const ema21 = ema21Full ? ema21Full.slice(startIndex) : null;
+  const boll = bollFull ? bollFull.slice(startIndex) : null;
+  const vwap = vwapFull ? vwapFull.slice(startIndex) : null;
+  const rsi = rsiFull ? rsiFull.slice(startIndex) : null;
+  const macd = macdFull ? macdFull.slice(startIndex) : null;
+
+  // Determine layout dimensions
+  const hasOscillator = state.indicators.rsi || state.indicators.macd;
+  const oscillatorH = hasOscillator ? Math.floor(75 * dpr) : 0;
+  const volumeH = Math.floor(h * 0.16);
+  const topPadding = Math.floor(22 * dpr);
+  const rightMargin = Math.floor(62 * dpr);
+  const chartW = w - rightMargin;
+  const priceH = h - topPadding - volumeH - oscillatorH - (hasOscillator ? Math.floor(16 * dpr) : Math.floor(8 * dpr));
+  const volumeTop = topPadding + priceH;
+  const oscillatorTop = volumeTop + volumeH + Math.floor(8 * dpr);
+
+  // Determine price bounds with indicator envelopes
   let minPrice = Infinity;
   let maxPrice = -Infinity;
   let maxVolume = 0;
 
-  for (const c of candles) {
+  for (let i = 0; i < candles.length; i++) {
+    const c = candles[i];
     if (c.low < minPrice) minPrice = c.low;
     if (c.high > maxPrice) maxPrice = c.high;
     if (c.volume > maxVolume) maxVolume = c.volume;
+
+    if (boll && boll[i]) {
+      if (boll[i].lower !== null && boll[i].lower < minPrice) minPrice = boll[i].lower;
+      if (boll[i].upper !== null && boll[i].upper > maxPrice) maxPrice = boll[i].upper;
+    }
   }
-  const pad = (maxPrice - minPrice) * 0.12 || 1;
+  const pad = (maxPrice - minPrice) * 0.08 || 1;
   minPrice -= pad;
   maxPrice += pad;
   if (maxVolume === 0) maxVolume = 100;
 
-  const rightMargin = 64 * dpr;
-  const topPadding = 24 * dpr;
-  const chartW = w - rightMargin;
-
-  // Split canvas: Price (top 75%), Volume (bottom 20%)
-  const volumeH = Math.floor(h * 0.20);
-  const priceH = Math.floor(h * 0.72) - topPadding;
-  const volumeTop = h - volumeH - (6 * dpr);
-
   const candleW = Math.max(3 * dpr, chartW / candles.length);
+  const getY = (p) => Math.floor(topPadding + priceH - ((p - minPrice) / (maxPrice - minPrice)) * priceH);
+  const getX = (idx) => Math.floor(idx * candleW + candleW / 2);
 
   // Background gridlines for Price
   ctx.strokeStyle = '#171b20';
   ctx.lineWidth = 1;
-  ctx.font = `${Math.floor(10 * dpr)}px IBM Plex Mono, monospace`;
+  ctx.font = `${Math.floor(9.5 * dpr)}px IBM Plex Mono, monospace`;
   ctx.fillStyle = '#565f6c';
 
   const gridSteps = 5;
@@ -407,11 +488,11 @@ function drawChart() {
   ctx.stroke();
 
   ctx.fillStyle = '#3a424e';
-  ctx.font = `${Math.floor(8.5 * dpr)}px IBM Plex Mono, monospace`;
+  ctx.font = `${Math.floor(8 * dpr)}px IBM Plex Mono, monospace`;
   ctx.fillText('VOL', 8 * dpr, volumeTop - (4 * dpr));
   ctx.fillText(maxVolume.toString(), chartW + (6 * dpr), volumeTop + (12 * dpr));
 
-  // Determine hovered candle index if mouse is active
+  // Determine hovered candle index
   let hoveredIndex = -1;
   if (chartHover.active && chartHover.x >= 0 && chartHover.x <= chartW) {
     hoveredIndex = Math.min(candles.length - 1, Math.max(0, Math.floor(chartHover.x / candleW)));
@@ -420,17 +501,17 @@ function drawChart() {
 
   // Draw Candlesticks and Volume Bars
   candles.forEach((c, idx) => {
-    const x = Math.floor(idx * candleW + candleW / 2);
+    const x = getX(idx);
     const isUp = c.close >= c.open;
     const bullColor = '#26a69a';
     const bearColor = '#ef5350';
     const color = isUp ? bullColor : bearColor;
 
     // Price coords
-    const yHigh = Math.floor(topPadding + priceH - ((c.high - minPrice) / (maxPrice - minPrice)) * priceH);
-    const yLow = Math.floor(topPadding + priceH - ((c.low - minPrice) / (maxPrice - minPrice)) * priceH);
-    const yOpen = Math.floor(topPadding + priceH - ((c.open - minPrice) / (maxPrice - minPrice)) * priceH);
-    const yClose = Math.floor(topPadding + priceH - ((c.close - minPrice) / (maxPrice - minPrice)) * priceH);
+    const yHigh = getY(c.high);
+    const yLow = getY(c.low);
+    const yOpen = getY(c.open);
+    const yClose = getY(c.close);
 
     // Wick
     ctx.strokeStyle = color;
@@ -449,15 +530,206 @@ function drawChart() {
 
     // Volume Bar
     const vH = Math.max(1, Math.floor((c.volume / maxVolume) * volumeH));
-    const vY = Math.floor(h - vH - (4 * dpr));
+    const vY = Math.floor(volumeTop + volumeH - vH);
     ctx.fillStyle = isUp ? 'rgba(38, 166, 154, 0.35)' : 'rgba(239, 83, 80, 0.35)';
     ctx.fillRect(Math.floor(x - barW / 2), vY, Math.floor(barW), vH);
   });
 
+  // Helper function to draw continuous line series
+  function drawLineSeries(series, color, width = 1.5, dashed = false) {
+    if (!series) return;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(1, Math.floor(width * dpr));
+    if (dashed) ctx.setLineDash([3 * dpr, 3 * dpr]);
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i < series.length; i++) {
+      const pt = series[i];
+      const val = pt ? (typeof pt === 'number' ? pt : pt.value) : null;
+      if (val === null || isNaN(val)) continue;
+      const x = getX(i);
+      const y = getY(val);
+      if (!started) {
+        ctx.moveTo(x, y);
+        started = true;
+      } else {
+        ctx.lineTo(x, y);
+      }
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Draw Bollinger Bands (shaded channel & lines)
+  if (boll) {
+    ctx.save();
+    // Shaded Ribbon
+    ctx.fillStyle = 'rgba(59, 130, 246, 0.08)';
+    ctx.beginPath();
+    let ribbonStarted = false;
+    for (let i = 0; i < boll.length; i++) {
+      if (boll[i].upper === null) continue;
+      const x = getX(i);
+      const y = getY(boll[i].upper);
+      if (!ribbonStarted) {
+        ctx.moveTo(x, y);
+        ribbonStarted = true;
+      } else {
+        ctx.lineTo(x, y);
+      }
+    }
+    for (let i = boll.length - 1; i >= 0; i--) {
+      if (boll[i].lower === null) continue;
+      const x = getX(i);
+      const y = getY(boll[i].lower);
+      ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.fill();
+
+    // Upper, Lower, Middle lines
+    drawLineSeries(boll.map(b => b.upper), '#60a5fa', 1, true);
+    drawLineSeries(boll.map(b => b.lower), '#60a5fa', 1, true);
+    drawLineSeries(boll.map(b => b.middle), 'rgba(96, 165, 250, 0.8)', 1.2, false);
+    ctx.restore();
+  }
+
+  // Draw Moving Averages & VWAP
+  if (sma20) drawLineSeries(sma20, '#f59e0b', 1.5);
+  if (sma50) drawLineSeries(sma50, '#38bdf8', 1.5);
+  if (ema9) drawLineSeries(ema9, '#c084fc', 1.5);
+  if (ema21) drawLineSeries(ema21, '#34d399', 1.5);
+  if (vwap) drawLineSeries(vwap, '#22d3ee', 1.5);
+
+  // Draw Oscillator Sub-Panel
+  if (hasOscillator) {
+    ctx.fillStyle = '#0a0d11';
+    ctx.fillRect(0, oscillatorTop, chartW, oscillatorH);
+    ctx.strokeStyle = '#20262e';
+    ctx.beginPath();
+    ctx.moveTo(0, oscillatorTop);
+    ctx.lineTo(chartW, oscillatorTop);
+    ctx.stroke();
+
+    if (state.indicators.rsi && rsi) {
+      const rsiY = (val) => Math.floor(oscillatorTop + oscillatorH - (val / 100) * oscillatorH);
+
+      // 70 overbought threshold (red dashed)
+      ctx.save();
+      ctx.strokeStyle = 'rgba(239, 68, 68, 0.4)';
+      ctx.setLineDash([2 * dpr, 2 * dpr]);
+      ctx.beginPath();
+      ctx.moveTo(0, rsiY(70));
+      ctx.lineTo(chartW, rsiY(70));
+      ctx.stroke();
+      ctx.fillStyle = '#ef4444';
+      ctx.font = `${Math.floor(8 * dpr)}px IBM Plex Mono, monospace`;
+      ctx.fillText('70', chartW + (4 * dpr), rsiY(70) + (3 * dpr));
+
+      // 30 oversold threshold (green dashed)
+      ctx.strokeStyle = 'rgba(34, 197, 94, 0.4)';
+      ctx.beginPath();
+      ctx.moveTo(0, rsiY(30));
+      ctx.lineTo(chartW, rsiY(30));
+      ctx.stroke();
+      ctx.fillStyle = '#22c55e';
+      ctx.fillText('30', chartW + (4 * dpr), rsiY(30) + (3 * dpr));
+      ctx.restore();
+
+      // RSI Curve
+      ctx.save();
+      ctx.strokeStyle = '#facc15';
+      ctx.lineWidth = Math.max(1, Math.floor(1.5 * dpr));
+      ctx.beginPath();
+      let rsiStarted = false;
+      for (let i = 0; i < rsi.length; i++) {
+        if (!rsi[i] || rsi[i].value === null) continue;
+        const x = getX(i);
+        const y = rsiY(rsi[i].value);
+        if (!rsiStarted) {
+          ctx.moveTo(x, y);
+          rsiStarted = true;
+        } else {
+          ctx.lineTo(x, y);
+        }
+      }
+      ctx.stroke();
+      ctx.restore();
+
+      const lastRsi = rsi[rsi.length - 1]?.value;
+      ctx.fillStyle = '#facc15';
+      ctx.font = `${Math.floor(9 * dpr)}px IBM Plex Mono, monospace`;
+      ctx.fillText(`RSI(14): ${lastRsi !== null && lastRsi !== undefined ? lastRsi.toFixed(1) : '—'}`, 8 * dpr, oscillatorTop + (12 * dpr));
+
+    } else if (state.indicators.macd && macd) {
+      let maxAbs = 0.5;
+      for (const m of macd) {
+        if (m.macd !== null) maxAbs = Math.max(maxAbs, Math.abs(m.macd));
+        if (m.signal !== null) maxAbs = Math.max(maxAbs, Math.abs(m.signal));
+        if (m.histogram !== null) maxAbs = Math.max(maxAbs, Math.abs(m.histogram));
+      }
+      maxAbs = maxAbs * 1.25;
+
+      const macdY = (val) => Math.floor(oscillatorTop + (oscillatorH / 2) - (val / maxAbs) * (oscillatorH / 2));
+      const zeroY = macdY(0);
+
+      // Zero Axis
+      ctx.strokeStyle = '#374151';
+      ctx.beginPath();
+      ctx.moveTo(0, zeroY);
+      ctx.lineTo(chartW, zeroY);
+      ctx.stroke();
+
+      // Histogram Bars
+      for (let i = 0; i < macd.length; i++) {
+        const m = macd[i];
+        if (m.histogram === null) continue;
+        const x = getX(i);
+        const y = macdY(m.histogram);
+        const barW = Math.max(2 * dpr, candleW * 0.6);
+        ctx.fillStyle = m.histogram >= 0 ? 'rgba(38, 166, 154, 0.7)' : 'rgba(239, 83, 80, 0.7)';
+        const top = Math.min(zeroY, y);
+        const hBar = Math.max(1, Math.abs(y - zeroY));
+        ctx.fillRect(Math.floor(x - barW / 2), top, Math.floor(barW), hBar);
+      }
+
+      // MACD Line (blue) and Signal Line (orange)
+      function drawOscLine(data, color) {
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = Math.max(1, Math.floor(1.2 * dpr));
+        ctx.beginPath();
+        let st = false;
+        for (let i = 0; i < data.length; i++) {
+          if (data[i] === null) continue;
+          const x = getX(i);
+          const y = macdY(data[i]);
+          if (!st) { ctx.moveTo(x, y); st = true; }
+          else { ctx.lineTo(x, y); }
+        }
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      drawOscLine(macd.map(m => m.macd), '#38bdf8');
+      drawOscLine(macd.map(m => m.signal), '#f97316');
+
+      const lastM = macd[macd.length - 1];
+      ctx.font = `${Math.floor(8.5 * dpr)}px IBM Plex Mono, monospace`;
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillText(`MACD: ${lastM.macd?.toFixed(2) || '—'}`, 8 * dpr, oscillatorTop + (11 * dpr));
+      ctx.fillStyle = '#f97316';
+      ctx.fillText(`Sig: ${lastM.signal?.toFixed(2) || '—'}`, 80 * dpr, oscillatorTop + (11 * dpr));
+      ctx.fillStyle = (lastM.histogram || 0) >= 0 ? '#4ade80' : '#f87171';
+      ctx.fillText(`Hist: ${lastM.histogram?.toFixed(2) || '—'}`, 145 * dpr, oscillatorTop + (11 * dpr));
+    }
+  }
+
   // Current Price Dashed Reference Line
   const comp = state.companies.get(state.selectedSymbol);
   if (comp) {
-    const curY = Math.floor(topPadding + priceH - ((comp.price - minPrice) / (maxPrice - minPrice)) * priceH);
+    const curY = getY(comp.price);
     const isUp = comp.change >= 0;
     ctx.strokeStyle = isUp ? '#26a69a' : '#ef5350';
     ctx.lineWidth = 1;
@@ -474,14 +746,14 @@ function drawChart() {
     ctx.strokeStyle = isUp ? '#26a69a' : '#ef5350';
     ctx.strokeRect(chartW, curY - (9 * dpr), rightMargin, 18 * dpr);
     ctx.fillStyle = isUp ? '#4ade80' : '#f87171';
-    ctx.font = `${Math.floor(10 * dpr)}px IBM Plex Mono, monospace`;
+    ctx.font = `${Math.floor(9.5 * dpr)}px IBM Plex Mono, monospace`;
     ctx.fillText(comp.price.toFixed(2), chartW + (5 * dpr), curY + (4 * dpr));
   }
 
   // Crosshair and Interactive Inspection Tooltip
-  if (chartHover.active && chartHover.candle) {
+  if (chartHover.active && chartHover.candle && hoveredIndex !== -1) {
     const hc = chartHover.candle;
-    const hx = Math.floor(hoveredIndex * candleW + candleW / 2);
+    const hx = getX(hoveredIndex);
     const hy = Math.min(Math.floor(topPadding + priceH), Math.max(topPadding, chartHover.y));
     const hoverPrice = maxPrice - ((hy - topPadding) / priceH) * (maxPrice - minPrice);
 
@@ -490,13 +762,11 @@ function drawChart() {
     ctx.lineWidth = 1;
     ctx.setLineDash([2 * dpr, 2 * dpr]);
 
-    // Vertical line
     ctx.beginPath();
     ctx.moveTo(hx, 0);
     ctx.lineTo(hx, h - (4 * dpr));
     ctx.stroke();
 
-    // Horizontal line
     ctx.beginPath();
     ctx.moveTo(0, hy);
     ctx.lineTo(chartW, hy);
@@ -511,51 +781,39 @@ function drawChart() {
     ctx.fillStyle = '#e2e8f0';
     ctx.fillText(hoverPrice.toFixed(2), chartW + (5 * dpr), hy + (4 * dpr));
 
-    // Top HUD Bar with OHLCV data
+    // Top HUD Bar with OHLCV data & Technical Indicators
     const isUp = hc.close >= hc.open;
     const chgVal = hc.close - hc.open;
     const chgPct = hc.open > 0 ? (chgVal / hc.open) * 100 : 0;
     const sign = chgVal >= 0 ? '+' : '';
     const hudTime = new Date(hc.time * 1000).toLocaleTimeString([], { hour12: false });
 
-    ctx.fillStyle = 'rgba(13, 16, 20, 0.9)';
-    ctx.fillRect(8 * dpr, 4 * dpr, 420 * dpr, 18 * dpr);
+    // Build HUD text snippets
+    let hudText = `${hudTime}  O:${hc.open.toFixed(2)} H:${hc.high.toFixed(2)} L:${hc.low.toFixed(2)} C:${hc.close.toFixed(2)} (${sign}${chgPct.toFixed(2)}%) V:${hc.volume}`;
+
+    if (sma20 && sma20[hoveredIndex]?.value !== null) hudText += `  SMA20:${sma20[hoveredIndex].value}`;
+    if (ema9 && ema9[hoveredIndex]?.value !== null) hudText += `  EMA9:${ema9[hoveredIndex].value}`;
+    if (vwap && vwap[hoveredIndex]?.value !== null) hudText += `  VWAP:${vwap[hoveredIndex].value}`;
+    if (rsi && rsi[hoveredIndex]?.value !== null) hudText += `  RSI:${rsi[hoveredIndex].value}`;
+    if (macd && macd[hoveredIndex]?.macd !== null) hudText += `  MACD:${macd[hoveredIndex].macd}`;
+
+    ctx.font = `${Math.floor(9 * dpr)}px IBM Plex Mono, monospace`;
+    const textWidth = ctx.measureText(hudText).width;
+    const hudW = Math.min(chartW - (16 * dpr), textWidth + (16 * dpr));
+
+    ctx.fillStyle = 'rgba(13, 16, 20, 0.92)';
+    ctx.fillRect(8 * dpr, 4 * dpr, hudW, 18 * dpr);
     ctx.strokeStyle = '#262d38';
-    ctx.strokeRect(8 * dpr, 4 * dpr, 420 * dpr, 18 * dpr);
-
-    ctx.font = `${Math.floor(9.5 * dpr)}px IBM Plex Mono, monospace`;
-    ctx.fillStyle = '#94a3b8';
-    ctx.fillText(hudTime, 14 * dpr, 16 * dpr);
+    ctx.strokeRect(8 * dpr, 4 * dpr, hudW, 18 * dpr);
 
     ctx.fillStyle = '#94a3b8';
-    ctx.fillText(`O:`, 78 * dpr, 16 * dpr);
-    ctx.fillStyle = '#f1f5f9';
-    ctx.fillText(hc.open.toFixed(2), 92 * dpr, 16 * dpr);
-
-    ctx.fillStyle = '#94a3b8';
-    ctx.fillText(`H:`, 144 * dpr, 16 * dpr);
-    ctx.fillStyle = '#f1f5f9';
-    ctx.fillText(hc.high.toFixed(2), 158 * dpr, 16 * dpr);
-
-    ctx.fillStyle = '#94a3b8';
-    ctx.fillText(`L:`, 210 * dpr, 16 * dpr);
-    ctx.fillStyle = '#f1f5f9';
-    ctx.fillText(hc.low.toFixed(2), 224 * dpr, 16 * dpr);
-
-    ctx.fillStyle = '#94a3b8';
-    ctx.fillText(`C:`, 276 * dpr, 16 * dpr);
-    ctx.fillStyle = isUp ? '#4ade80' : '#f87171';
-    ctx.fillText(`${hc.close.toFixed(2)} (${sign}${chgPct.toFixed(2)}%)`, 290 * dpr, 16 * dpr);
-
-    ctx.fillStyle = '#94a3b8';
-    ctx.fillText(`V:`, 375 * dpr, 16 * dpr);
-    ctx.fillStyle = '#f1f5f9';
-    ctx.fillText(hc.volume.toString(), 389 * dpr, 16 * dpr);
+    ctx.fillText(hudText, 14 * dpr, 16 * dpr);
   }
 }
 
 function loadChartData(symbol) {
-  socket.emit('chart:history', { symbol }, (candles) => {
+  const tf = state.activeTimeframe || '5s';
+  socket.emit('chart:history', { symbol, timeframe: tf }, (candles) => {
     currentCandlesList = candles || [];
     drawChart();
   });
