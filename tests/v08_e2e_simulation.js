@@ -56,6 +56,12 @@ async function runSimulation() {
   console.log(`[PASS] Verified bot starting capital: ${account.portfolio.credits} CR`);
 
   // 4. Query live orderbook depth
+  let ping = await botClient.ping();
+  while (ping.clock && (ping.clock.phase === 'POST_MARKET' || ping.clock.phase === 'CLOSED')) {
+    await new Promise(r => setTimeout(r, 1000));
+    ping = await botClient.ping();
+  }
+
   const symbol = 'BYTE';
   const book = await botClient.getOrderbook(symbol, 5);
   assert(book.bids.length > 0 && book.asks.length > 0);

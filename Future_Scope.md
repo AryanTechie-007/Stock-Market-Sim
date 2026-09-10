@@ -4,7 +4,7 @@
 
 This document outlines the architectural roadmap and deep feature queue for MarketArena as the platform progresses from its current local testing phase toward a public-facing, multi-tenant quantitative trading and market simulation platform.
 
-Features completed in releases (e.g. SQLite persistence, achievements, multi-day rollover, stop-loss, stop-limit, trailing stops, OCO bracket orders, margin trading, short selling, multi-timeframe candles, institutional indicators, quantitative risk analytics, tournament mode, adaptive market regimes, statistical arbitrage bots, iceberg order execution, programmatic bot REST APIs, HMAC-SHA256 authentication, token-bucket rate limiting, Python/JavaScript client SDKs, responsive mobile/tablet layout, workspace layout presets, and granular audio synthesis sound board) are migrated into production documentation upon verification.
+Features completed in releases (e.g. SQLite persistence, achievements, multi-day rollover, stop-loss, stop-limit, trailing stops, OCO bracket orders, margin trading, short selling, multi-timeframe candles, institutional indicators, quantitative risk analytics, tournament mode, adaptive market regimes, statistical arbitrage bots, iceberg order execution, programmatic bot REST APIs, HMAC-SHA256 authentication, token-bucket rate limiting, Python/JavaScript client SDKs, responsive mobile/tablet layout, workspace layout presets, granular audio synthesis sound board, multi-stage Docker containerization, and GitHub Actions CI/CD) are migrated into production documentation upon verification.
 
 ---
 
@@ -27,10 +27,9 @@ Features completed in releases (e.g. SQLite persistence, achievements, multi-day
 
 ## 2. Production Deployment and Security
 
-### Infrastructure Configuration
-- Docker containerization for matching engine, background workers, and web frontend.
-- Continuous Integration and Deployment (CI/CD) pipelines running automated regression test suites.
-- Cloud hosting on managed platforms (e.g., Render, Railway, AWS ECS) with automated TLS/SSL certificate renewal.
+### Infrastructure & Cloud Hosting
+- Cloud hosting deployment on managed platforms (e.g., Render, Railway, AWS ECS) with automated TLS/SSL certificate renewal.
+- Edge caching and CDN reverse proxy configuration for static terminal assets.
 
 ### Authentication & Multi-Tenancy
 - User authentication via OAuth2 (GitHub, Google) and email/password with Argon2 password hashing.

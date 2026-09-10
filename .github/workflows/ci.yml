@@ -1,0 +1,40 @@
+name: MarketArena Continuous Integration
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Regression & Stress Test Suite
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [20.x, 22.x]
+
+    steps:
+      - name: Checkout Codebase
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Setup Python 3.12 (For SDK Tests)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Node Dependencies
+        run: npm ci
+
+      - name: Run Core & Platform Regression Suites
+        run: npm run test:regression
+
+      - name: Run Multi-Round Stress Verification
+        run: npm test

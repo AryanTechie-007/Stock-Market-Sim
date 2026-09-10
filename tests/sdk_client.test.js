@@ -23,7 +23,11 @@ async function run() {
     apiSecret
   });
 
-  const ping = await client.ping();
+  let ping = await client.ping();
+  while (ping.clock && (ping.clock.phase === 'POST_MARKET' || ping.clock.phase === 'CLOSED')) {
+    await new Promise(r => setTimeout(r, 1000));
+    ping = await client.ping();
+  }
   assert.strictEqual(ping.status, 'ok');
 
   const regime = await client.getRegime();

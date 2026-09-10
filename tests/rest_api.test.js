@@ -7,7 +7,11 @@ const BASE_URL = 'http://localhost:3000';
 async function run() {
   // Test 1: Public Ping and Market Regime
   console.log('Test 1: Public Ping and Market Regime');
-  const pingRes = await fetch(`${BASE_URL}/api/v1/ping`).then(r => r.json());
+  let pingRes = await fetch(`${BASE_URL}/api/v1/ping`).then(r => r.json());
+  while (pingRes.clock && (pingRes.clock.phase === 'POST_MARKET' || pingRes.clock.phase === 'CLOSED')) {
+    await new Promise(r => setTimeout(r, 1000));
+    pingRes = await fetch(`${BASE_URL}/api/v1/ping`).then(r => r.json());
+  }
   assert.strictEqual(pingRes.status, 'ok', 'Ping status should be ok');
   assert(pingRes.clock, 'Ping should include market clock');
 
