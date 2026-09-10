@@ -6,7 +6,9 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "test": "node tests/stress_runner.test.js",
+    "test:regression": "node tests/full_regression.test.js"
   },
   "dependencies": {
     "express": "^4.21.2",
