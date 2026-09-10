@@ -29,28 +29,109 @@ const state = {
 
 // Subtle Web Audio Synthesizer
 let audioCtx = null;
+function getAudioContext() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+  return audioCtx;
+}
+
 function playTickTone(isBuy) {
   if (!state.soundEnabled) return;
   try {
-    if (!audioCtx) {
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    if (audioCtx.state === 'suspended') {
-      audioCtx.resume();
-    }
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
+    const ctx = getAudioContext();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(isBuy ? 780 : 640, audioCtx.currentTime);
-    gain.gain.setValueAtTime(0.015, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.04);
+    osc.frequency.setValueAtTime(isBuy ? 780 : 640, ctx.currentTime);
+    gain.gain.setValueAtTime(0.012, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.04);
     osc.connect(gain);
-    gain.connect(audioCtx.destination);
+    gain.connect(ctx.destination);
     osc.start();
-    osc.stop(audioCtx.currentTime + 0.04);
+    osc.stop(ctx.currentTime + 0.04);
   } catch (e) {
     // Audio restricted prior to user gesture
   }
+}
+
+function playTradeFillTone(isBuy) {
+  if (!state.soundEnabled) return;
+  try {
+    const ctx = getAudioContext();
+    const now = ctx.currentTime;
+    const osc1 = ctx.createOscillator();
+    const osc2 = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc1.type = 'sine';
+    osc2.type = 'triangle';
+
+    const baseFreq = isBuy ? 587.33 : 440; // D5 for buy, A4 for sell
+    osc1.frequency.setValueAtTime(baseFreq, now);
+    osc1.frequency.exponentialRampToValueAtTime(baseFreq * 1.5, now + 0.18);
+    osc2.frequency.setValueAtTime(baseFreq * 1.25, now);
+
+    gain.gain.setValueAtTime(0.04, now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.28);
+
+    osc1.connect(gain);
+    osc2.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc1.start(now);
+    osc2.start(now);
+    osc1.stop(now + 0.28);
+    osc2.stop(now + 0.28);
+  } catch (e) {}
+}
+
+function playBellTone(isOpening) {
+  if (!state.soundEnabled) return;
+  try {
+    const ctx = getAudioContext();
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(isOpening ? 523.25 : 392.00, now); // C5 or G4
+
+    gain.gain.setValueAtTime(0.08, now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.2);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start(now);
+    osc.stop(now + 1.2);
+  } catch (e) {}
+}
+
+function playNewsTone() {
+  if (!state.soundEnabled) return;
+  try {
+    const ctx = getAudioContext();
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, now);
+    osc.frequency.setValueAtTime(1174.66, now + 0.08);
+
+    gain.gain.setValueAtTime(0.03, now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start(now);
+    osc.stop(now + 0.22);
+  } catch (e) {}
 }
 
 // Socket Connection
@@ -110,13 +191,16 @@ const elements = {
   // Tabs Header
   tabBtnPortfolio: document.getElementById('tabBtnPortfolio'),
   tabBtnOpenOrders: document.getElementById('tabBtnOpenOrders'),
+  tabBtnMyTrades: document.getElementById('tabBtnMyTrades'),
   tabBtnLeaderboard: document.getElementById('tabBtnLeaderboard'),
   tabBtnNews: document.getElementById('tabBtnNews'),
   openOrdersBadge: document.getElementById('openOrdersBadge'),
+  myTradesBadge: document.getElementById('myTradesBadge'),
   newsCountBadge: document.getElementById('newsCountBadge'),
   // Tab Views
   viewPortfolio: document.getElementById('viewPortfolio'),
   viewOpenOrders: document.getElementById('viewOpenOrders'),
+  viewMyTrades: document.getElementById('viewMyTrades'),
   viewLeaderboard: document.getElementById('viewLeaderboard'),
   viewNews: document.getElementById('viewNews'),
   // Portfolio Stats
@@ -128,6 +212,7 @@ const elements = {
   metricRealizedPnL: document.getElementById('metricRealizedPnL'),
   holdingsTableBody: document.getElementById('holdingsTableBody'),
   openOrdersTableBody: document.getElementById('openOrdersTableBody'),
+  myTradesTableBody: document.getElementById('myTradesTableBody'),
   leaderboardTableBody: document.getElementById('leaderboardTableBody'),
   newsLogContainer: document.getElementById('newsLogContainer'),
   // Modal
@@ -140,8 +225,9 @@ const elements = {
 const formatCurrency = (val) => Number(val || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' CR';
 const formatNumber = (val) => Number(val || 0).toLocaleString('en-US');
 
-// Canvas Candlestick Chart Renderer
+// Canvas Candlestick & Volume Chart Renderer
 let currentCandlesList = [];
+let chartHover = { active: false, x: 0, y: 0, candle: null };
 
 function initChart() {
   const canvas = elements.chartCanvas;
@@ -155,6 +241,21 @@ function initChart() {
     drawChart();
   }
 
+  canvas.addEventListener('mousemove', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    chartHover.active = true;
+    chartHover.x = (e.clientX - rect.left) * dpr;
+    chartHover.y = (e.clientY - rect.top) * dpr;
+    drawChart();
+  });
+
+  canvas.addEventListener('mouseleave', () => {
+    chartHover.active = false;
+    chartHover.candle = null;
+    drawChart();
+  });
+
   window.addEventListener('resize', handleResize);
   setTimeout(handleResize, 50);
 }
@@ -165,35 +266,46 @@ function drawChart() {
   const ctx = canvas.getContext('2d');
   const w = canvas.width;
   const h = canvas.height;
+  const dpr = window.devicePixelRatio || 1;
 
   ctx.clearRect(0, 0, w, h);
   if (!currentCandlesList || currentCandlesList.length === 0) return;
 
-  const candles = currentCandlesList.slice(-45);
+  const candles = currentCandlesList.slice(-50);
   let minPrice = Infinity;
   let maxPrice = -Infinity;
+  let maxVolume = 0;
 
   for (const c of candles) {
     if (c.low < minPrice) minPrice = c.low;
     if (c.high > maxPrice) maxPrice = c.high;
+    if (c.volume > maxVolume) maxVolume = c.volume;
   }
   const pad = (maxPrice - minPrice) * 0.12 || 1;
   minPrice -= pad;
   maxPrice += pad;
+  if (maxVolume === 0) maxVolume = 100;
 
-  const rightMargin = 60 * (window.devicePixelRatio || 1);
+  const rightMargin = 64 * dpr;
+  const topPadding = 24 * dpr;
   const chartW = w - rightMargin;
-  const candleW = Math.max(3, chartW / candles.length);
 
-  // Horizontal Gridlines & Price Scales
+  // Split canvas: Price (top 75%), Volume (bottom 20%)
+  const volumeH = Math.floor(h * 0.20);
+  const priceH = Math.floor(h * 0.72) - topPadding;
+  const volumeTop = h - volumeH - (6 * dpr);
+
+  const candleW = Math.max(3 * dpr, chartW / candles.length);
+
+  // Background gridlines for Price
   ctx.strokeStyle = '#171b20';
   ctx.lineWidth = 1;
-  ctx.font = `${Math.floor(10 * (window.devicePixelRatio || 1))}px IBM Plex Mono, monospace`;
-  ctx.fillStyle = '#454c56';
+  ctx.font = `${Math.floor(10 * dpr)}px IBM Plex Mono, monospace`;
+  ctx.fillStyle = '#565f6c';
 
   const gridSteps = 5;
   for (let i = 0; i <= gridSteps; i++) {
-    const y = Math.floor(15 + (h - 30) * (i / gridSteps));
+    const y = Math.floor(topPadding + priceH * (i / gridSteps));
     const priceVal = maxPrice - ((maxPrice - minPrice) * (i / gridSteps));
 
     ctx.beginPath();
@@ -201,23 +313,45 @@ function drawChart() {
     ctx.lineTo(chartW, y);
     ctx.stroke();
 
-    ctx.fillText(priceVal.toFixed(2), chartW + 6, y + 4);
+    ctx.fillText(priceVal.toFixed(2), chartW + (6 * dpr), y + (4 * dpr));
   }
 
-  // Draw Candlesticks
+  // Volume separator line & label
+  ctx.strokeStyle = '#20262e';
+  ctx.beginPath();
+  ctx.moveTo(0, volumeTop);
+  ctx.lineTo(chartW, volumeTop);
+  ctx.stroke();
+
+  ctx.fillStyle = '#3a424e';
+  ctx.font = `${Math.floor(8.5 * dpr)}px IBM Plex Mono, monospace`;
+  ctx.fillText('VOL', 8 * dpr, volumeTop - (4 * dpr));
+  ctx.fillText(maxVolume.toString(), chartW + (6 * dpr), volumeTop + (12 * dpr));
+
+  // Determine hovered candle index if mouse is active
+  let hoveredIndex = -1;
+  if (chartHover.active && chartHover.x >= 0 && chartHover.x <= chartW) {
+    hoveredIndex = Math.min(candles.length - 1, Math.max(0, Math.floor(chartHover.x / candleW)));
+    chartHover.candle = candles[hoveredIndex];
+  }
+
+  // Draw Candlesticks and Volume Bars
   candles.forEach((c, idx) => {
     const x = Math.floor(idx * candleW + candleW / 2);
     const isUp = c.close >= c.open;
-    const color = isUp ? '#3d6b52' : '#7a3c35';
+    const bullColor = '#26a69a';
+    const bearColor = '#ef5350';
+    const color = isUp ? bullColor : bearColor;
 
-    const yHigh = Math.floor(h - ((c.high - minPrice) / (maxPrice - minPrice)) * (h - 30) - 15);
-    const yLow = Math.floor(h - ((c.low - minPrice) / (maxPrice - minPrice)) * (h - 30) - 15);
-    const yOpen = Math.floor(h - ((c.open - minPrice) / (maxPrice - minPrice)) * (h - 30) - 15);
-    const yClose = Math.floor(h - ((c.close - minPrice) / (maxPrice - minPrice)) * (h - 30) - 15);
+    // Price coords
+    const yHigh = Math.floor(topPadding + priceH - ((c.high - minPrice) / (maxPrice - minPrice)) * priceH);
+    const yLow = Math.floor(topPadding + priceH - ((c.low - minPrice) / (maxPrice - minPrice)) * priceH);
+    const yOpen = Math.floor(topPadding + priceH - ((c.open - minPrice) / (maxPrice - minPrice)) * priceH);
+    const yClose = Math.floor(topPadding + priceH - ((c.close - minPrice) / (maxPrice - minPrice)) * priceH);
 
     // Wick
     ctx.strokeStyle = color;
-    ctx.lineWidth = 1.2;
+    ctx.lineWidth = Math.max(1, Math.floor(1 * dpr));
     ctx.beginPath();
     ctx.moveTo(x, yHigh);
     ctx.lineTo(x, yLow);
@@ -226,30 +360,114 @@ function drawChart() {
     // Body
     ctx.fillStyle = color;
     const bodyTop = Math.min(yOpen, yClose);
-    const bodyH = Math.max(2, Math.abs(yClose - yOpen));
-    const barW = Math.max(2, candleW * 0.65);
+    const bodyH = Math.max(2 * dpr, Math.abs(yClose - yOpen));
+    const barW = Math.max(2 * dpr, candleW * 0.72);
     ctx.fillRect(Math.floor(x - barW / 2), bodyTop, Math.floor(barW), bodyH);
+
+    // Volume Bar
+    const vH = Math.max(1, Math.floor((c.volume / maxVolume) * volumeH));
+    const vY = Math.floor(h - vH - (4 * dpr));
+    ctx.fillStyle = isUp ? 'rgba(38, 166, 154, 0.35)' : 'rgba(239, 83, 80, 0.35)';
+    ctx.fillRect(Math.floor(x - barW / 2), vY, Math.floor(barW), vH);
   });
 
   // Current Price Dashed Reference Line
   const comp = state.companies.get(state.selectedSymbol);
   if (comp) {
-    const curY = Math.floor(h - ((comp.price - minPrice) / (maxPrice - minPrice)) * (h - 30) - 15);
+    const curY = Math.floor(topPadding + priceH - ((comp.price - minPrice) / (maxPrice - minPrice)) * priceH);
     const isUp = comp.change >= 0;
-    ctx.strokeStyle = isUp ? '#3d6b52' : '#7a3c35';
+    ctx.strokeStyle = isUp ? '#26a69a' : '#ef5350';
     ctx.lineWidth = 1;
-    ctx.setLineDash([3, 3]);
+    ctx.setLineDash([3 * dpr, 3 * dpr]);
     ctx.beginPath();
     ctx.moveTo(0, curY);
     ctx.lineTo(chartW, curY);
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Price tag block
-    ctx.fillStyle = isUp ? '#16261d' : '#2a1815';
-    ctx.fillRect(chartW, curY - 8, rightMargin, 16);
-    ctx.fillStyle = isUp ? '#4a9e6f' : '#c47c72';
-    ctx.fillText(comp.price.toFixed(2), chartW + 6, curY + 4);
+    // Price tag badge on right margin
+    ctx.fillStyle = isUp ? '#132c25' : '#331918';
+    ctx.fillRect(chartW, curY - (9 * dpr), rightMargin, 18 * dpr);
+    ctx.strokeStyle = isUp ? '#26a69a' : '#ef5350';
+    ctx.strokeRect(chartW, curY - (9 * dpr), rightMargin, 18 * dpr);
+    ctx.fillStyle = isUp ? '#4ade80' : '#f87171';
+    ctx.font = `${Math.floor(10 * dpr)}px IBM Plex Mono, monospace`;
+    ctx.fillText(comp.price.toFixed(2), chartW + (5 * dpr), curY + (4 * dpr));
+  }
+
+  // Crosshair and Interactive Inspection Tooltip
+  if (chartHover.active && chartHover.candle) {
+    const hc = chartHover.candle;
+    const hx = Math.floor(hoveredIndex * candleW + candleW / 2);
+    const hy = Math.min(Math.floor(topPadding + priceH), Math.max(topPadding, chartHover.y));
+    const hoverPrice = maxPrice - ((hy - topPadding) / priceH) * (maxPrice - minPrice);
+
+    // Crosshair Lines
+    ctx.strokeStyle = '#6b7280';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2 * dpr, 2 * dpr]);
+
+    // Vertical line
+    ctx.beginPath();
+    ctx.moveTo(hx, 0);
+    ctx.lineTo(hx, h - (4 * dpr));
+    ctx.stroke();
+
+    // Horizontal line
+    ctx.beginPath();
+    ctx.moveTo(0, hy);
+    ctx.lineTo(chartW, hy);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Cursor Price Badge on scale
+    ctx.fillStyle = '#1e232b';
+    ctx.fillRect(chartW, hy - (8 * dpr), rightMargin, 16 * dpr);
+    ctx.strokeStyle = '#4b5563';
+    ctx.strokeRect(chartW, hy - (8 * dpr), rightMargin, 16 * dpr);
+    ctx.fillStyle = '#e2e8f0';
+    ctx.fillText(hoverPrice.toFixed(2), chartW + (5 * dpr), hy + (4 * dpr));
+
+    // Top HUD Bar with OHLCV data
+    const isUp = hc.close >= hc.open;
+    const chgVal = hc.close - hc.open;
+    const chgPct = hc.open > 0 ? (chgVal / hc.open) * 100 : 0;
+    const sign = chgVal >= 0 ? '+' : '';
+    const hudTime = new Date(hc.time * 1000).toLocaleTimeString([], { hour12: false });
+
+    ctx.fillStyle = 'rgba(13, 16, 20, 0.9)';
+    ctx.fillRect(8 * dpr, 4 * dpr, 420 * dpr, 18 * dpr);
+    ctx.strokeStyle = '#262d38';
+    ctx.strokeRect(8 * dpr, 4 * dpr, 420 * dpr, 18 * dpr);
+
+    ctx.font = `${Math.floor(9.5 * dpr)}px IBM Plex Mono, monospace`;
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillText(hudTime, 14 * dpr, 16 * dpr);
+
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillText(`O:`, 78 * dpr, 16 * dpr);
+    ctx.fillStyle = '#f1f5f9';
+    ctx.fillText(hc.open.toFixed(2), 92 * dpr, 16 * dpr);
+
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillText(`H:`, 144 * dpr, 16 * dpr);
+    ctx.fillStyle = '#f1f5f9';
+    ctx.fillText(hc.high.toFixed(2), 158 * dpr, 16 * dpr);
+
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillText(`L:`, 210 * dpr, 16 * dpr);
+    ctx.fillStyle = '#f1f5f9';
+    ctx.fillText(hc.low.toFixed(2), 224 * dpr, 16 * dpr);
+
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillText(`C:`, 276 * dpr, 16 * dpr);
+    ctx.fillStyle = isUp ? '#4ade80' : '#f87171';
+    ctx.fillText(`${hc.close.toFixed(2)} (${sign}${chgPct.toFixed(2)}%)`, 290 * dpr, 16 * dpr);
+
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillText(`V:`, 375 * dpr, 16 * dpr);
+    ctx.fillStyle = '#f1f5f9';
+    ctx.fillText(hc.volume.toString(), 389 * dpr, 16 * dpr);
   }
 }
 
@@ -524,6 +742,9 @@ function renderPortfolio(portfolio) {
       elements.holdingsTableBody.appendChild(row);
     }
   }
+
+  // My Trades Table
+  renderMyTrades(portfolio.tradeHistory);
 }
 
 window.quickTradeHolding = function(symbol) {
@@ -567,6 +788,53 @@ window.cancelOrder = function(symbol, orderId) {
     // Acknowledged
   });
 };
+
+function renderMyTrades(tradeHistory) {
+  state.myTrades = tradeHistory || [];
+  if (elements.myTradesBadge) {
+    elements.myTradesBadge.textContent = state.myTrades.length;
+  }
+  if (!elements.myTradesTableBody) return;
+
+  elements.myTradesTableBody.innerHTML = '';
+  if (state.myTrades.length === 0) {
+    elements.myTradesTableBody.innerHTML = `<tr class="empty-row"><td colspan="10">No executed trades recorded yet for your account.</td></tr>`;
+    return;
+  }
+
+  for (const tr of state.myTrades) {
+    const isBuy = tr.side === 'BUY';
+    const sideCls = isBuy ? 'up' : 'down';
+    const row = document.createElement('tr');
+    const timeStr = new Date(tr.timestamp).toLocaleTimeString([], { hour12: false });
+
+    let pnlHtml = '<span style="color:var(--text-faint)">—</span>';
+    if (!isBuy && tr.realizedPnL !== undefined) {
+      const isProfit = tr.realizedPnL >= 0;
+      const sign = isProfit ? '+' : '';
+      const cls = isProfit ? 'up' : 'down';
+      pnlHtml = `<span class="${cls}">${sign}${formatCurrency(tr.realizedPnL)}</span>`;
+    }
+
+    const roleBadge = tr.role === 'MAKER'
+      ? `<span class="badge-tag" style="color:var(--amber);border-color:var(--amber)">MAKER</span>`
+      : `<span class="badge-tag" style="color:var(--text-dim)">TAKER</span>`;
+
+    row.innerHTML = `
+      <td style="font-size:10px;color:var(--text-faint)">${tr.id.slice(-8)}</td>
+      <td>${timeStr}</td>
+      <td><b>${tr.symbol}</b></td>
+      <td class="${sideCls}"><b>${tr.side}</b></td>
+      <td>${roleBadge}</td>
+      <td>${Number(tr.price).toFixed(2)} CR</td>
+      <td>${tr.quantity}</td>
+      <td>${formatCurrency(tr.totalValue)}</td>
+      <td>${pnlHtml}</td>
+      <td style="color:var(--text-dim);font-size:10px">${tr.counterparty || 'Market'}</td>
+    `;
+    elements.myTradesTableBody.appendChild(row);
+  }
+}
 
 function renderLeaderboard(leaderboard) {
   state.leaderboard = leaderboard || [];
@@ -633,6 +901,7 @@ function handleBreakingNews(newsItem) {
     <span class="news-history-time">${new Date(newsItem.timestamp).toLocaleTimeString()}</span>
   `;
   elements.newsLogContainer.insertBefore(logItem, elements.newsLogContainer.firstChild);
+  playNewsTone();
 }
 
 // Order Form UI Controls
@@ -773,6 +1042,7 @@ elements.orderForm.addEventListener('submit', (e) => {
 const tabMapping = [
   { btn: elements.tabBtnPortfolio, view: elements.viewPortfolio },
   { btn: elements.tabBtnOpenOrders, view: elements.viewOpenOrders },
+  { btn: elements.tabBtnMyTrades, view: elements.viewMyTrades },
   { btn: elements.tabBtnLeaderboard, view: elements.viewLeaderboard },
   { btn: elements.tabBtnNews, view: elements.viewNews }
 ];
@@ -919,6 +1189,14 @@ socket.on('leaderboard:update', (leaderboard) => {
 
 socket.on('news:breaking', (newsItem) => {
   handleBreakingNews(newsItem);
+});
+
+socket.on('bell:ring', (data) => {
+  playBellTone(data && data.bell === 'OPENING_BELL');
+});
+
+socket.on('trade:personal', (trade) => {
+  playTradeFillTone(trade && trade.mySide === 'BUY');
 });
 
 socket.on('companies:update', (companies) => {

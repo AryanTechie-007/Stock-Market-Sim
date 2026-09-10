@@ -4,27 +4,125 @@
  * realized/unrealized P&L, and leaderboard ranking.
  */
 export class AccountManager {
-  constructor(initialCredits = 100000) {
+  constructor(initialCredits = 100000, storageManager = null) {
     this.initialCredits = initialCredits;
+    this.storageManager = storageManager;
     this.accounts = new Map(); // userId -> account object
+
+    if (this.storageManager) {
+      this._loadFromStorage();
+    }
+  }
+
+  _serializeAccounts() {
+    const list = [];
+    for (const user of this.accounts.values()) {
+      if (user.isNpc) continue; // Only persist human users
+      const holdingsObj = {};
+      for (const [sym, h] of user.holdings.entries()) {
+        holdingsObj[sym] = { ...h };
+      }
+      list.push({
+        id: user.id,
+        name: user.name,
+        isNpc: false,
+        initialCapital: user.initialCapital,
+        credits: user.credits,
+        lockedCredits: user.lockedCredits,
+        holdings: holdingsObj,
+        tradeHistory: user.tradeHistory || [],
+        realizedPnL: user.realizedPnL,
+        tradesCount: user.tradesCount,
+        volumeTraded: user.volumeTraded,
+        createdAt: user.createdAt
+      });
+    }
+    return { users: list, savedAt: Date.now() };
+  }
+
+  _loadFromStorage() {
+    if (!this.storageManager) return;
+    if (typeof this.storageManager.loadAllAccounts === 'function') {
+      const accountsList = this.storageManager.loadAllAccounts();
+      for (const acc of accountsList) {
+        this.accounts.set(acc.id, acc);
+      }
+      return;
+    }
+    const data = this.storageManager.loadState ? this.storageManager.loadState() : null;
+    if (!data || !Array.isArray(data.users)) return;
+    for (const raw of data.users) {
+      const holdingsMap = new Map();
+      if (raw.holdings && typeof raw.holdings === 'object') {
+        for (const [sym, h] of Object.entries(raw.holdings)) {
+          holdingsMap.set(sym, {
+            quantity: h.quantity || 0,
+            avgPrice: h.avgPrice || 0,
+            lockedQty: 0
+          });
+        }
+      }
+      this.accounts.set(raw.id, {
+        id: raw.id,
+        name: raw.name,
+        isNpc: false,
+        initialCapital: raw.initialCapital || this.initialCredits,
+        credits: raw.credits !== undefined ? raw.credits : this.initialCredits,
+        lockedCredits: 0,
+        holdings: holdingsMap,
+        tradeHistory: raw.tradeHistory || [],
+        realizedPnL: raw.realizedPnL || 0,
+        tradesCount: raw.tradesCount || 0,
+        volumeTraded: raw.volumeTraded || 0,
+        createdAt: raw.createdAt || Date.now()
+      });
+    }
+  }
+
+  _saveAccount(account) {
+    if (!account || account.isNpc || !this.storageManager) return;
+    if (typeof this.storageManager.saveAccount === 'function') {
+      this.storageManager.saveAccount(account);
+    } else if (typeof this.storageManager.scheduleSave === 'function') {
+      this.storageManager.scheduleSave(this._serializeAccounts());
+    }
+  }
+
+  _recordTrade(userId, tradeItem) {
+    if (!this.storageManager || typeof this.storageManager.recordTrade !== 'function') return;
+    this.storageManager.recordTrade(userId, tradeItem);
+  }
+
+  _saveToStorage() {
+    if (this.storageManager) {
+      if (typeof this.storageManager.scheduleSave === 'function') {
+        this.storageManager.scheduleSave(this._serializeAccounts());
+      }
+    }
   }
 
   getOrCreateUser(userId, userName, isNpc = false, customInitialCredits = null) {
     if (!this.accounts.has(userId)) {
+      const computedIsNpc = isNpc || (typeof userId === 'string' && userId.startsWith('bot_'));
       const startCapital = customInitialCredits !== null ? customInitialCredits : this.initialCredits;
-      this.accounts.set(userId, {
+      const account = {
         id: userId,
-        name: userName || (isNpc ? `Bot_${userId}` : `Trader_${userId.slice(0, 4)}`),
-        isNpc,
+        name: userName || (computedIsNpc ? `Bot_${userId}` : `Trader_${userId.slice(0, 4)}`),
+        isNpc: computedIsNpc,
         initialCapital: startCapital,
         credits: startCapital,
         lockedCredits: 0,
         holdings: new Map(), // symbol -> { quantity: number, avgPrice: number, lockedQty: number }
+        tradeHistory: [], // array of executed trades for this account
         realizedPnL: 0,
         tradesCount: 0,
         volumeTraded: 0,
         createdAt: Date.now()
-      });
+      };
+      this.accounts.set(userId, account);
+      if (!computedIsNpc) {
+        this._saveAccount(account);
+      }
     }
     return this.accounts.get(userId);
   }
@@ -62,6 +160,21 @@ export class AccountManager {
     if (!holding) return false;
     const availableShares = holding.quantity - (holding.lockedQty || 0);
     return availableShares >= quantity;
+  }
+
+  getSellAvailability(userId, symbol) {
+    const user = this.accounts.get(userId);
+    if (!user) return { hasHolding: false, totalShares: 0, availableShares: 0, lockedShares: 0 };
+    const holding = user.holdings.get(symbol);
+    if (!holding || holding.quantity <= 0) return { hasHolding: false, totalShares: 0, availableShares: 0, lockedShares: 0 };
+    const lockedShares = holding.lockedQty || 0;
+    const availableShares = holding.quantity - lockedShares;
+    return {
+      hasHolding: true,
+      totalShares: holding.quantity,
+      availableShares,
+      lockedShares
+    };
   }
 
   lockShares(userId, symbol, quantity) {
@@ -112,11 +225,33 @@ export class AccountManager {
     buyerHolding.avgPrice = +((prevBuyerCost + totalValue) / newBuyerQty).toFixed(2);
     buyerHolding.quantity = newBuyerQty;
 
+    // Record buyer trade history
+    if (!buyer.tradeHistory) buyer.tradeHistory = [];
+    const buyerTrade = {
+      id: trade.id,
+      symbol: trade.symbol,
+      side: 'BUY',
+      price: trade.price,
+      quantity: trade.quantity,
+      totalValue,
+      role: buyerWasMaker ? 'MAKER' : 'TAKER',
+      counterparty: trade.sellerName,
+      timestamp: trade.timestamp || Date.now()
+    };
+    buyer.tradeHistory.unshift(buyerTrade);
+    if (buyer.tradeHistory.length > 100) buyer.tradeHistory.pop();
+
+    if (!buyer.isNpc) {
+      this._saveAccount(buyer);
+      this._recordTrade(buyer.id, buyerTrade);
+    }
+
     // Update Seller
     seller.credits = +(seller.credits + totalValue).toFixed(2);
     seller.tradesCount++;
     seller.volumeTraded = +(seller.volumeTraded + totalValue).toFixed(2);
 
+    let profit = 0;
     const sellerHolding = seller.holdings.get(trade.symbol);
     if (sellerHolding) {
       if (sellerWasMaker) {
@@ -124,7 +259,7 @@ export class AccountManager {
       }
       // Calculate realized P&L
       const costBasis = sellerHolding.avgPrice * trade.quantity;
-      const profit = totalValue - costBasis;
+      profit = +(totalValue - costBasis).toFixed(2);
       seller.realizedPnL = +(seller.realizedPnL + profit).toFixed(2);
 
       sellerHolding.quantity -= trade.quantity;
@@ -134,6 +269,33 @@ export class AccountManager {
         sellerHolding.lockedQty = 0;
       }
     }
+
+    // Record seller trade history
+    if (!seller.tradeHistory) seller.tradeHistory = [];
+    const sellerTrade = {
+      id: trade.id,
+      symbol: trade.symbol,
+      side: 'SELL',
+      price: trade.price,
+      quantity: trade.quantity,
+      totalValue,
+      role: sellerWasMaker ? 'MAKER' : 'TAKER',
+      realizedPnL: profit,
+      counterparty: trade.buyerName,
+      timestamp: trade.timestamp || Date.now()
+    };
+    seller.tradeHistory.unshift(sellerTrade);
+    if (seller.tradeHistory.length > 100) seller.tradeHistory.pop();
+
+    if (!seller.isNpc) {
+      this._saveAccount(seller);
+      this._recordTrade(seller.id, sellerTrade);
+    }
+  }
+
+  getUserTradeHistory(userId) {
+    const user = this.getUser(userId);
+    return user ? (user.tradeHistory || []) : [];
   }
 
   getPortfolio(userId, currentPrices) {
@@ -188,7 +350,8 @@ export class AccountManager {
       unrealizedPnL: +totalUnrealizedPnL.toFixed(2),
       tradesCount: user.tradesCount,
       volumeTraded: user.volumeTraded,
-      holdings: holdingsList
+      holdings: holdingsList,
+      tradeHistory: user.tradeHistory || []
     };
   }
 

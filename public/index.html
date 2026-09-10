@@ -112,6 +112,7 @@
       <div class="tabs">
         <div class="tab active" id="tabBtnPortfolio">Portfolio</div>
         <div class="tab" id="tabBtnOpenOrders">Open orders (<span id="openOrdersBadge">0</span>)</div>
+        <div class="tab" id="tabBtnMyTrades">My Trades (<span id="myTradesBadge">0</span>)</div>
         <div class="tab" id="tabBtnLeaderboard">Leaderboard</div>
         <div class="tab" id="tabBtnNews">News log (<span id="newsCountBadge">0</span>)</div>
       </div>
@@ -277,6 +278,29 @@
       <div class="news-history" id="newsLogContainer">
         <!-- Dynamic News Archive -->
       </div>
+    </div>
+
+    <!-- Tab 5: My Trades View -->
+    <div class="tab-view" id="viewMyTrades">
+      <table>
+        <thead>
+          <tr>
+            <th>Trade ID</th>
+            <th>Time</th>
+            <th>Symbol</th>
+            <th>Side</th>
+            <th>Role</th>
+            <th>Price</th>
+            <th>Quantity</th>
+            <th>Total Value</th>
+            <th>Realized P/L</th>
+            <th>Counterparty</th>
+          </tr>
+        </thead>
+        <tbody id="myTradesTableBody">
+          <tr class="empty-row"><td colspan="10">No executed trades recorded yet for your account.</td></tr>
+        </tbody>
+      </table>
     </div>
 
   </div>

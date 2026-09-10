@@ -9,6 +9,7 @@ import { AccountManager } from './engine/accounts.js';
 import { MatchingEngine } from './engine/matching.js';
 import { MarketManager } from './engine/market.js';
 import { NPCManager } from './traders/manager.js';
+import { SQLiteStorageManager } from './engine/sqlite-storage.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -21,13 +22,14 @@ const io = new Server(httpServer, {
 
 const PORT = process.env.PORT || 3000;
 
-// Initialize Core Subsystems
+// Initialize Core Subsystems with SQLite Persistence
+const storageManager = new SQLiteStorageManager();
 const clock = new MarketClock({
   openDurationSec: 180,    // 3 mins open trading
   postMarketDurationSec: 25, // 25s post-market recap
   preMarketDurationSec: 20   // 20s pre-market
 });
-const accountManager = new AccountManager(100000); // 100,000 Credits
+const accountManager = new AccountManager(100000, storageManager); // 100,000 Credits
 const symbols = ['AUTO', 'SOLR', 'BYTE', 'NBNK', 'MEDL'];
 const matchingEngine = new MatchingEngine(symbols, accountManager, clock);
 const marketManager = new MarketManager(clock, matchingEngine);
@@ -76,6 +78,20 @@ matchingEngine.on('orderbookChange', ({ symbol, depth }) => {
 
 matchingEngine.on('trade', (trade) => {
   io.emit('trade:new', trade);
+
+  // Notify buyer and seller with personal trade fill notification
+  const buyerSockets = userSockets.get(trade.buyerId);
+  if (buyerSockets) {
+    for (const sId of buyerSockets) {
+      io.to(sId).emit('trade:personal', { ...trade, mySide: 'BUY' });
+    }
+  }
+  const sellerSockets = userSockets.get(trade.sellerId);
+  if (sellerSockets) {
+    for (const sId of sellerSockets) {
+      io.to(sId).emit('trade:personal', { ...trade, mySide: 'SELL' });
+    }
+  }
 
   // Notify buyer and seller with fresh portfolio
   sendPortfolioUpdate(trade.buyerId);

@@ -92,8 +92,22 @@ export class MatchingEngine extends EventEmitter {
         return { success: false, error: 'Insufficient credits to place this buy order' };
       }
     } else if (side === 'SELL') {
-      if (!this.accountManager.canAffordSell(userId, symbol, cleanQty)) {
-        return { success: false, error: `Insufficient available shares of ${symbol} to sell` };
+      if (type === 'MARKET') {
+        const bestBid = book.getBestBid();
+        if (!bestBid) {
+          return { success: false, error: 'Cannot execute Market Sell: No buyers in the order book' };
+        }
+      }
+
+      const sellCheck = this.accountManager.getSellAvailability(userId, symbol);
+      if (!sellCheck.hasHolding) {
+        return { success: false, error: `You do not own any shares of ${symbol}` };
+      }
+      if (sellCheck.availableShares < cleanQty) {
+        return {
+          success: false,
+          error: `Insufficient shares: you have ${sellCheck.availableShares} available of ${symbol} (${sellCheck.lockedShares} locked in open orders), but tried to sell ${cleanQty}`
+        };
       }
     }
 
