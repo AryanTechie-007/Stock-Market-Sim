@@ -2,10 +2,10 @@
 
 ## Repository Metadata
 
-- **Current Pushed Version:** v0.903
+- **Current Pushed Version:** v0.904
 - **Username:** AryanTechie-007
-- **Push Timestamp:** 2026-09-11 00:08:00 IST (UTC+05:30)
-- **Current Status:** Deployed Build (Production Docker Containerization & CI/CD Pipeline Release)
+- **Push Timestamp:** 2026-09-11 00:14:00 IST (UTC+05:30)
+- **Current Status:** Deployed Build (User Authentication, Password Hashing & Session Security Release)
 - **Repository:** https://github.com/AryanTechie-007/Stock-Market-Sim
 
 ---
@@ -369,6 +369,11 @@ To execute the production containerization and CI/CD configuration test suite:
 node tests/container_config.test.js
 ```
 
+To execute the user authentication and session security test suite:
+```bash
+node tests/auth.test.js
+```
+
 To execute the live WebSocket integration tests:
 ```bash
 node tests/tier2_e2e_simulation.js
@@ -421,6 +426,7 @@ node tests/v08_e2e_simulation.js
 39. JavaScript terminal frontend zero-syntax compilation and interactive button event listener integrity.
 40. Multi-round platform stress testing suite (5 consecutive rounds, 25 test executions) and repository-wide regression runner.
 41. Multi-stage Docker container build directives, alpine runtime minimization, docker-compose orchestration, and GitHub Actions CI workflow.
+42. Cryptographic scrypt password hashing, unique random salting, constant-time verification, session token lifecycle, and CSRF protection.
 
 ---
 
@@ -437,7 +443,9 @@ node tests/v08_e2e_simulation.js
 - **v0.9 (Pushed to GitHub):** Frontend Terminal Modernization & Responsive Layout: Multi-tier responsive breakpoint engine across mobile, tablet, and ultra-wide viewports (1200px, 992px, 768px, 480px); mobile floating quick trade action bar and smooth sliding bottom sheet order entry drawer; Workspace Layout Customizer featuring four specialized presets (PRO TERMINAL, CHART FOCUS, SPEED TRADER, ANALYTICS HUD) and individual panel toggles; and Granular Synthesized Audio Sound Board with master volume slider, master mute toggle, and six independent audio channels (Fills, Ticks, Alerts, Bells, News, Fanfare) with live audition triggers and persistent browser storage.
 - **v0.901 (Pushed to GitHub):** Frontend Terminal Event System & Button Interaction Hotfix: Eliminated dangling HTML template tokens that caused JavaScript parsing syntax errors in app.js, restored complete browser button click responsiveness across order pads, workspace presets, and sound boards, and added automated compile-time syntax validation to frontend modernization test suite.
 - **v0.902 (Pushed to GitHub):** Platform Stress Runner & Test Automation: Integrated multi-round automated stress testing suite (tests/stress_runner.test.js) and full repository regression runner (tests/full_regression.test.js) into standard npm test lifecycle scripts.
-- **v0.903 (Current Release):** Production Docker Containerization & CI/CD Pipeline: Engineered multi-stage production Dockerfile based on node:22-alpine with non-root security boundaries and built-in HTTP healthchecks; authored docker-compose.yml with persistent SQLite volume mounts; configured .dockerignore rules; and established automated GitHub Actions CI workflow (.github/workflows/ci.yml) validating all test suites on node:20.x and node:22.x runners.
+- **v0.903 (Pushed to GitHub):** Production Docker Containerization & CI/CD Pipeline: Engineered multi-stage production Dockerfile based on node:22-alpine with non-root security boundaries and built-in HTTP healthchecks; authored docker-compose.yml with persistent SQLite volume mounts; configured .dockerignore rules; and established automated GitHub Actions CI workflow (.github/workflows/ci.yml) validating all test suites on node:20.x and node:22.x runners.
+- **v0.904 (Current Release):** User Authentication, Password Hashing & Session Security: Built native cryptographic credentials subsystem (engine/auth.js) utilizing Node.js crypto.scryptSync with 16-byte random salts and constant-time timingSafeEqual verification; engineered SQLite relational tables (user_credentials, user_sessions) with foreign key relationships; created 24-hour cryptographically randomized session tokens (masess_...) and per-session CSRF tokens (macsrf_...); and mounted RESTful authentication endpoints (/api/v1/auth/register, /login, /me, /logout, /logout-all).
+
 
 
 

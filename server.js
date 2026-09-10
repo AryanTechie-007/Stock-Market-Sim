@@ -14,6 +14,7 @@ import { TournamentManager } from './engine/tournament.js';
 import { MarketRegimeEngine } from './engine/regimes.js';
 import { APIKeyManager } from './engine/api-keys.js';
 import { TokenBucketRateLimiter } from './engine/rate-limiter.js';
+import { AuthManager } from './engine/auth.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -42,6 +43,7 @@ const npcManager = new NPCManager(matchingEngine, marketManager, accountManager,
 const tournamentManager = new TournamentManager(accountManager, clock, 180, 50000, () => marketManager.getCurrentPrices());
 const apiKeyManager = new APIKeyManager(storageManager);
 const rateLimiter = new TokenBucketRateLimiter({ capacity: 100, refillRate: 20 });
+const authManager = new AuthManager(storageManager);
 
 // Wire regime events
 regimeEngine.on('regimeChange', (regime) => {
@@ -149,6 +151,53 @@ app.get('/api/v1/candles/:symbol', (req, res) => {
     count: sliced.length,
     candles: sliced
   });
+});
+
+// --- User Authentication & Session Endpoints ---
+app.post('/api/v1/auth/register', (req, res) => {
+  const { username, email, password } = req.body || {};
+  const result = authManager.register(username, email, password);
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+  // Provision default trading account bankroll in accountManager
+  accountManager.getOrCreateUser(result.user.id, result.user.username, false);
+  res.status(201).json(result);
+});
+
+app.post('/api/v1/auth/login', (req, res) => {
+  const { identifier, password } = req.body || {};
+  const result = authManager.login(identifier, password);
+  if (!result.success) {
+    return res.status(401).json(result);
+  }
+  res.json(result);
+});
+
+app.get('/api/v1/auth/me', authManager.requireSession(), (req, res) => {
+  const creds = storageManager.getUserCredentialById(req.userId);
+  const user = accountManager.getUser(req.userId);
+  res.json({
+    user: {
+      id: req.userId,
+      username: creds ? creds.username : (user ? user.name : 'Unknown'),
+      email: creds ? creds.email : null
+    },
+    csrfToken: req.csrfToken,
+    session: {
+      token: req.sessionToken
+    }
+  });
+});
+
+app.post('/api/v1/auth/logout', authManager.requireSession(), (req, res) => {
+  const revoked = authManager.revokeSession(req.sessionToken);
+  res.json({ success: revoked });
+});
+
+app.post('/api/v1/auth/logout-all', authManager.requireSession(), (req, res) => {
+  const count = authManager.revokeAllUserSessions(req.userId);
+  res.json({ success: true, revokedCount: count });
 });
 
 // --- API Key Management ---

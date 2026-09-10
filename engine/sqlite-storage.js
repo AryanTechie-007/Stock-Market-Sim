@@ -103,6 +103,27 @@ export class SQLiteStorageManager {
         active INTEGER NOT NULL DEFAULT 1
       );
       CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_id);
+
+      CREATE TABLE IF NOT EXISTS user_credentials (
+        user_id TEXT PRIMARY KEY,
+        username TEXT UNIQUE NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        salt TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_user_creds_username ON user_credentials(username);
+      CREATE INDEX IF NOT EXISTS idx_user_creds_email ON user_credentials(email);
+
+      CREATE TABLE IF NOT EXISTS user_sessions (
+        token TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        csrf_token TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        is_revoked INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id);
     `);
 
     // Dynamic column migrations for backward compatibility
@@ -415,4 +436,134 @@ export class SQLiteStorageManager {
       console.error('[SQLite] Error deleting API key:', err.message);
     }
   }
+
+  /**
+   * Save user credentials
+   */
+  saveUserCredentials({ userId, username, email, passwordHash, salt, createdAt }) {
+    try {
+      const stmt = this.db.prepare(`
+        INSERT INTO user_credentials (user_id, username, email, password_hash, salt, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
+      stmt.run(userId, username, email, passwordHash, salt, createdAt);
+    } catch (err) {
+      console.error('[SQLite] Error saving user credentials:', err.message);
+      throw err;
+    }
+  }
+
+  /**
+   * Get user credentials by username
+   */
+  getUserCredentialByUsername(username) {
+    try {
+      const stmt = this.db.prepare(`
+        SELECT user_id as userId, username, email, password_hash as passwordHash, salt, created_at as createdAt
+        FROM user_credentials WHERE username = ?
+      `);
+      return stmt.get(username) || null;
+    } catch (err) {
+      console.error('[SQLite] Error getting credentials by username:', err.message);
+      return null;
+    }
+  }
+
+  /**
+   * Get user credentials by email
+   */
+  getUserCredentialByEmail(email) {
+    try {
+      const stmt = this.db.prepare(`
+        SELECT user_id as userId, username, email, password_hash as passwordHash, salt, created_at as createdAt
+        FROM user_credentials WHERE email = ?
+      `);
+      return stmt.get(email) || null;
+    } catch (err) {
+      console.error('[SQLite] Error getting credentials by email:', err.message);
+      return null;
+    }
+  }
+
+  /**
+   * Get user credentials by user ID
+   */
+  getUserCredentialById(userId) {
+    try {
+      const stmt = this.db.prepare(`
+        SELECT user_id as userId, username, email, password_hash as passwordHash, salt, created_at as createdAt
+        FROM user_credentials WHERE user_id = ?
+      `);
+      return stmt.get(userId) || null;
+    } catch (err) {
+      console.error('[SQLite] Error getting credentials by ID:', err.message);
+      return null;
+    }
+  }
+
+  /**
+   * Save user session
+   */
+  saveSession({ token, userId, csrfToken, createdAt, expiresAt, isRevoked }) {
+    try {
+      const stmt = this.db.prepare(`
+        INSERT INTO user_sessions (token, user_id, csrf_token, created_at, expires_at, is_revoked)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
+      stmt.run(token, userId, csrfToken, createdAt, expiresAt, isRevoked ? 1 : 0);
+    } catch (err) {
+      console.error('[SQLite] Error saving session:', err.message);
+      throw err;
+    }
+  }
+
+  /**
+   * Get session by token
+   */
+  getSession(token) {
+    try {
+      const stmt = this.db.prepare(`
+        SELECT token, user_id as userId, csrf_token as csrfToken, created_at as createdAt, expires_at as expiresAt, is_revoked as isRevoked
+        FROM user_sessions WHERE token = ?
+      `);
+      const row = stmt.get(token);
+      if (!row) return null;
+      return {
+        ...row,
+        isRevoked: Boolean(row.isRevoked)
+      };
+    } catch (err) {
+      console.error('[SQLite] Error getting session:', err.message);
+      return null;
+    }
+  }
+
+  /**
+   * Revoke an active session
+   */
+  revokeSession(token) {
+    try {
+      const stmt = this.db.prepare(`UPDATE user_sessions SET is_revoked = 1 WHERE token = ?`);
+      const result = stmt.run(token);
+      return result.changes > 0;
+    } catch (err) {
+      console.error('[SQLite] Error revoking session:', err.message);
+      return false;
+    }
+  }
+
+  /**
+   * Revoke all active sessions for a user
+   */
+  revokeAllUserSessions(userId) {
+    try {
+      const stmt = this.db.prepare(`UPDATE user_sessions SET is_revoked = 1 WHERE user_id = ? AND is_revoked = 0`);
+      const result = stmt.run(userId);
+      return result.changes;
+    } catch (err) {
+      console.error('[SQLite] Error revoking user sessions:', err.message);
+      return 0;
+    }
+  }
 }
+

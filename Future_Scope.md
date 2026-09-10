@@ -4,7 +4,7 @@
 
 This document outlines the architectural roadmap and deep feature queue for MarketArena as the platform progresses from its current local testing phase toward a public-facing, multi-tenant quantitative trading and market simulation platform.
 
-Features completed in releases (e.g. SQLite persistence, achievements, multi-day rollover, stop-loss, stop-limit, trailing stops, OCO bracket orders, margin trading, short selling, multi-timeframe candles, institutional indicators, quantitative risk analytics, tournament mode, adaptive market regimes, statistical arbitrage bots, iceberg order execution, programmatic bot REST APIs, HMAC-SHA256 authentication, token-bucket rate limiting, Python/JavaScript client SDKs, responsive mobile/tablet layout, workspace layout presets, granular audio synthesis sound board, multi-stage Docker containerization, and GitHub Actions CI/CD) are migrated into production documentation upon verification.
+Features completed in releases (e.g. SQLite persistence, achievements, multi-day rollover, stop-loss, stop-limit, trailing stops, OCO bracket orders, margin trading, short selling, multi-timeframe candles, institutional indicators, quantitative risk analytics, tournament mode, adaptive market regimes, statistical arbitrage bots, iceberg order execution, programmatic bot REST APIs, HMAC-SHA256 authentication, token-bucket rate limiting, Python/JavaScript client SDKs, responsive mobile/tablet layout, workspace layout presets, granular audio synthesis sound board, multi-stage Docker containerization, GitHub Actions CI/CD, and cryptographic scrypt user authentication with session management and CSRF protection) are migrated into production documentation upon verification.
 
 ---
 
@@ -32,5 +32,6 @@ Features completed in releases (e.g. SQLite persistence, achievements, multi-day
 - Edge caching and CDN reverse proxy configuration for static terminal assets.
 
 ### Authentication & Multi-Tenancy
-- User authentication via OAuth2 (GitHub, Google) and email/password with Argon2 password hashing.
-- Session revocation and cross-site request forgery (CSRF) protection.
+- External identity providers: OAuth2 integration (GitHub, Google OAuth) to complement the native scrypt credentials and session security engine.
+- Multi-factor authentication (TOTP/RFC 6238) for high-value tournament and margin accounts.
+

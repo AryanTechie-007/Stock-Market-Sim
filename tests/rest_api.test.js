@@ -126,7 +126,7 @@ async function run() {
   console.log(`[PASS] Order #${orderId} successfully cancelled\n`);
 
   console.log('[SUCCESS] ALL RESTFUL API ENDPOINT TESTS PASSED!\n');
-  process.exit(0);
+  setTimeout(() => process.exit(0), 50);
 }
 
 run().catch(err => {

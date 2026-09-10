@@ -84,7 +84,7 @@ async function run() {
   }
 
   console.log('[SUCCESS] ALL DEVELOPER SDK CLIENT TESTS PASSED!\n');
-  process.exit(0);
+  setTimeout(() => process.exit(0), 50);
 }
 
 run().catch(err => {
