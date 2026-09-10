@@ -4,7 +4,7 @@
 
 This document outlines the architectural roadmap and deep feature queue for MarketArena as the platform progresses from its current local testing phase toward a public-facing, multi-tenant quantitative trading and market simulation platform.
 
-Features completed in releases (e.g. SQLite persistence, achievements, multi-day rollover, stop-loss, stop-limit, trailing stops, OCO bracket orders, margin trading, short selling, multi-timeframe candles, institutional indicators, quantitative risk analytics, tournament mode, adaptive market regimes, statistical arbitrage bots, iceberg order execution, programmatic bot REST APIs, HMAC-SHA256 authentication, token-bucket rate limiting, and Python/JavaScript client SDKs) are migrated into production documentation upon verification.
+Features completed in releases (e.g. SQLite persistence, achievements, multi-day rollover, stop-loss, stop-limit, trailing stops, OCO bracket orders, margin trading, short selling, multi-timeframe candles, institutional indicators, quantitative risk analytics, tournament mode, adaptive market regimes, statistical arbitrage bots, iceberg order execution, programmatic bot REST APIs, HMAC-SHA256 authentication, token-bucket rate limiting, Python/JavaScript client SDKs, responsive mobile/tablet layout, workspace layout presets, and granular audio synthesis sound board) are migrated into production documentation upon verification.
 
 ---
 
@@ -25,19 +25,7 @@ Features completed in releases (e.g. SQLite persistence, achievements, multi-day
 
 ---
 
-## 2. Frontend Terminal Modernization
-
-### Responsive Layout
-- Fully responsive mobile and tablet interface with touch-optimized order entry drawers.
-- Dedicated mobile view featuring quick-swipe ticker navigation.
-
-### Workspace Customization
-- Modular, draggable dock panels allowing users to arrange order books, charts, tapes, and watchlists according to personal workflow preferences.
-- Audio synthesis control panel allowing granular volume adjustment for fills, tape ticks, news alerts, and session bells.
-
----
-
-## 3. Production Deployment and Security
+## 2. Production Deployment and Security
 
 ### Infrastructure Configuration
 - Docker containerization for matching engine, background workers, and web frontend.

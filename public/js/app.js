@@ -40,7 +40,7 @@ const state = {
   regime: null
 };
 
-// Subtle Web Audio Synthesizer
+// Granular Web Audio Synthesizer & Sound Board Engine (v0.9)
 let audioCtx = null;
 function getAudioContext() {
   if (!audioCtx) {
@@ -52,27 +52,51 @@ function getAudioContext() {
   return audioCtx;
 }
 
+const soundConfig = {
+  masterVolume: 0.8,
+  muted: false,
+  channels: {
+    fills: 0.8,
+    ticks: 0.6,
+    alerts: 0.9,
+    bells: 0.85,
+    news: 0.7,
+    fanfare: 0.85
+  }
+};
+
+try {
+  const savedSound = localStorage.getItem('marketarena_sound_config');
+  if (savedSound) Object.assign(soundConfig, JSON.parse(savedSound));
+} catch (_) {}
+
+function getChannelGain(channel, defaultGain) {
+  if (soundConfig.muted || !state.soundEnabled) return 0;
+  const chVol = soundConfig.channels[channel] !== undefined ? soundConfig.channels[channel] : 0.8;
+  return defaultGain * soundConfig.masterVolume * chVol;
+}
+
 function playTickTone(isBuy) {
-  if (!state.soundEnabled) return;
+  const gainVal = getChannelGain('ticks', 0.015);
+  if (gainVal <= 0) return;
   try {
     const ctx = getAudioContext();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = 'sine';
     osc.frequency.setValueAtTime(isBuy ? 780 : 640, ctx.currentTime);
-    gain.gain.setValueAtTime(0.012, ctx.currentTime);
+    gain.gain.setValueAtTime(gainVal, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.04);
     osc.connect(gain);
     gain.connect(ctx.destination);
     osc.start();
     osc.stop(ctx.currentTime + 0.04);
-  } catch (e) {
-    // Audio restricted prior to user gesture
-  }
+  } catch (e) {}
 }
 
 function playTradeFillTone(isBuy) {
-  if (!state.soundEnabled) return;
+  const gainVal = getChannelGain('fills', 0.04);
+  if (gainVal <= 0) return;
   try {
     const ctx = getAudioContext();
     const now = ctx.currentTime;
@@ -88,7 +112,7 @@ function playTradeFillTone(isBuy) {
     osc1.frequency.exponentialRampToValueAtTime(baseFreq * 1.5, now + 0.18);
     osc2.frequency.setValueAtTime(baseFreq * 1.25, now);
 
-    gain.gain.setValueAtTime(0.04, now);
+    gain.gain.setValueAtTime(gainVal, now);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.28);
 
     osc1.connect(gain);
@@ -103,7 +127,8 @@ function playTradeFillTone(isBuy) {
 }
 
 function playBellTone(isOpening) {
-  if (!state.soundEnabled) return;
+  const gainVal = getChannelGain('bells', 0.08);
+  if (gainVal <= 0) return;
   try {
     const ctx = getAudioContext();
     const now = ctx.currentTime;
@@ -113,7 +138,7 @@ function playBellTone(isOpening) {
     osc.type = 'sine';
     osc.frequency.setValueAtTime(isOpening ? 523.25 : 392.00, now); // C5 or G4
 
-    gain.gain.setValueAtTime(0.08, now);
+    gain.gain.setValueAtTime(gainVal, now);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.2);
 
     osc.connect(gain);
@@ -125,7 +150,8 @@ function playBellTone(isOpening) {
 }
 
 function playNewsTone() {
-  if (!state.soundEnabled) return;
+  const gainVal = getChannelGain('news', 0.03);
+  if (gainVal <= 0) return;
   try {
     const ctx = getAudioContext();
     const now = ctx.currentTime;
@@ -136,7 +162,7 @@ function playNewsTone() {
     osc.frequency.setValueAtTime(880, now);
     osc.frequency.setValueAtTime(1174.66, now + 0.08);
 
-    gain.gain.setValueAtTime(0.03, now);
+    gain.gain.setValueAtTime(gainVal, now);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
 
     osc.connect(gain);
@@ -148,7 +174,8 @@ function playNewsTone() {
 }
 
 function playAchievementTone() {
-  if (!state.soundEnabled) return;
+  const gainVal = getChannelGain('fanfare', 0.06);
+  if (gainVal <= 0) return;
   try {
     const ctx = getAudioContext();
     const now = ctx.currentTime;
@@ -158,7 +185,7 @@ function playAchievementTone() {
       const gain = ctx.createGain();
       osc.type = 'triangle';
       osc.frequency.setValueAtTime(freq, now + idx * 0.09);
-      gain.gain.setValueAtTime(0.06, now + idx * 0.09);
+      gain.gain.setValueAtTime(gainVal, now + idx * 0.09);
       gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.09 + 0.35);
       osc.connect(gain);
       gain.connect(ctx.destination);
@@ -169,7 +196,8 @@ function playAchievementTone() {
 }
 
 function playStopTriggerTone() {
-  if (!state.soundEnabled) return;
+  const gainVal = getChannelGain('alerts', 0.05);
+  if (gainVal <= 0) return;
   try {
     const ctx = getAudioContext();
     const now = ctx.currentTime;
@@ -178,13 +206,22 @@ function playStopTriggerTone() {
     osc.type = 'sawtooth';
     osc.frequency.setValueAtTime(650, now);
     osc.frequency.linearRampToValueAtTime(320, now + 0.25);
-    gain.gain.setValueAtTime(0.04, now);
+    gain.gain.setValueAtTime(gainVal, now);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.25);
     osc.connect(gain);
     gain.connect(ctx.destination);
     osc.start(now);
     osc.stop(now + 0.25);
   } catch (e) {}
+}
+
+function testAuditionSound(channel) {
+  if (channel === 'fills') playTradeFillTone(true);
+  else if (channel === 'ticks') playTickTone(true);
+  else if (channel === 'alerts') playStopTriggerTone();
+  else if (channel === 'bells') playBellTone(true);
+  else if (channel === 'news') playNewsTone();
+  else if (channel === 'fanfare') playAchievementTone();
 }
 
 // Socket Connection
@@ -216,6 +253,35 @@ const elements = {
   btnTabNode: document.getElementById('btnTabNode'),
   btnTabCurl: document.getElementById('btnTabCurl'),
   apiCodeSnippet: document.getElementById('apiCodeSnippet'),
+  // Workspace Layout & Sound Board (v0.9)
+  layoutBtn: document.getElementById('layoutBtn'),
+  soundBoardBtn: document.getElementById('soundBoardBtn'),
+  workspaceModal: document.getElementById('workspaceModal'),
+  closeWorkspaceModalBtn: document.getElementById('closeWorkspaceModalBtn'),
+  dismissWorkspaceModalBtn: document.getElementById('dismissWorkspaceModalBtn'),
+  presetProBtn: document.getElementById('presetProBtn'),
+  presetChartBtn: document.getElementById('presetChartBtn'),
+  presetSpeedBtn: document.getElementById('presetSpeedBtn'),
+  presetAnalyticsBtn: document.getElementById('presetAnalyticsBtn'),
+  toggleWatchlistPanel: document.getElementById('toggleWatchlistPanel'),
+  toggleOrderPanel: document.getElementById('toggleOrderPanel'),
+  toggleTapePanel: document.getElementById('toggleTapePanel'),
+  mainLayout: document.getElementById('mainLayout'),
+  colWatchlist: document.getElementById('colWatchlist'),
+  colCenter: document.getElementById('colCenter'),
+  colOrder: document.getElementById('colOrder'),
+  closeOrderDrawerBtn: document.getElementById('closeOrderDrawerBtn'),
+  mobileTradeBar: document.getElementById('mobileTradeBar'),
+  mobileTradeSym: document.getElementById('mobileTradeSym'),
+  mobileTradePx: document.getElementById('mobileTradePx'),
+  mobileQuickBuyBtn: document.getElementById('mobileQuickBuyBtn'),
+  mobileQuickSellBtn: document.getElementById('mobileQuickSellBtn'),
+  soundBoardModal: document.getElementById('soundBoardModal'),
+  closeSoundBoardModalBtn: document.getElementById('closeSoundBoardModalBtn'),
+  dismissSoundBoardModalBtn: document.getElementById('dismissSoundBoardModalBtn'),
+  masterVolSlider: document.getElementById('masterVolSlider'),
+  masterVolVal: document.getElementById('masterVolVal'),
+  modalMuteToggleBtn: document.getElementById('modalMuteToggleBtn'),
   // News
   newsHeadline: document.getElementById('newsHeadline'),
   // Watchlist & Fundamentals
@@ -1017,6 +1083,9 @@ function selectSymbol(symbol) {
 
   // Render Depth
   renderOrderBook(state.depths.get(symbol));
+
+  // Update mobile bottom bar
+  updateMobileTradeBar();
 }
 
 function renderOrderBook(depth) {
@@ -2439,8 +2508,231 @@ if (elements.btnTabPython) elements.btnTabPython.addEventListener('click', () =>
 if (elements.btnTabNode) elements.btnTabNode.addEventListener('click', () => setCodeTab('node'));
 if (elements.btnTabCurl) elements.btnTabCurl.addEventListener('click', () => setCodeTab('curl'));
 
+// ==========================================
+// WORKSPACE LAYOUT PRESETS & CUSTOMIZATION (v0.9)
+// ==========================================
+const workspaceConfig = {
+  preset: 'PRO',
+  showWatchlist: true,
+  showOrder: true,
+  showTape: true
+};
+
+try {
+  const savedWs = localStorage.getItem('marketarena_workspace_config');
+  if (savedWs) Object.assign(workspaceConfig, JSON.parse(savedWs));
+} catch (_) {}
+
+function applyWorkspaceLayout() {
+  if (!elements.mainLayout) return;
+  elements.mainLayout.classList.remove('layout-chart-focus', 'layout-speed', 'layout-analytics');
+  
+  if (workspaceConfig.preset === 'CHART_FOCUS') {
+    elements.mainLayout.classList.add('layout-chart-focus');
+  } else if (workspaceConfig.preset === 'SPEED') {
+    elements.mainLayout.classList.add('layout-speed');
+  } else if (workspaceConfig.preset === 'ANALYTICS') {
+    elements.mainLayout.classList.add('layout-analytics');
+  }
+
+  // Panel toggles when in PRO mode
+  if (workspaceConfig.preset === 'PRO') {
+    if (elements.colWatchlist) elements.colWatchlist.style.display = workspaceConfig.showWatchlist ? '' : 'none';
+    if (elements.colOrder) elements.colOrder.style.display = workspaceConfig.showOrder ? '' : 'none';
+    if (elements.tradesFeedContainer) {
+      elements.tradesFeedContainer.style.display = workspaceConfig.showTape ? '' : 'none';
+      const tapeHead = document.querySelector('.tape-head');
+      if (tapeHead) tapeHead.style.display = workspaceConfig.showTape ? '' : 'none';
+    }
+  } else {
+    if (elements.colWatchlist) elements.colWatchlist.style.display = '';
+    if (elements.colOrder) elements.colOrder.style.display = '';
+    if (elements.tradesFeedContainer) {
+      elements.tradesFeedContainer.style.display = '';
+      const tapeHead = document.querySelector('.tape-head');
+      if (tapeHead) tapeHead.style.display = '';
+    }
+  }
+
+  if (elements.layoutBtn) {
+    elements.layoutBtn.textContent = `LAYOUT: ${workspaceConfig.preset.replace('_', ' ')}`;
+  }
+
+  document.querySelectorAll('.preset-card').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-preset') === workspaceConfig.preset);
+  });
+
+  if (elements.toggleWatchlistPanel) elements.toggleWatchlistPanel.checked = workspaceConfig.showWatchlist;
+  if (elements.toggleOrderPanel) elements.toggleOrderPanel.checked = workspaceConfig.showOrder;
+  if (elements.toggleTapePanel) elements.toggleTapePanel.checked = workspaceConfig.showTape;
+
+  try {
+    localStorage.setItem('marketarena_workspace_config', JSON.stringify(workspaceConfig));
+  } catch (_) {}
+
+  // Trigger resize on chart canvas
+  setTimeout(() => {
+    if (window.dispatchEvent) window.dispatchEvent(new Event('resize'));
+  }, 50);
+}
+
+// Workspace Modal Listeners
+if (elements.layoutBtn) {
+  elements.layoutBtn.addEventListener('click', () => {
+    if (elements.workspaceModal) elements.workspaceModal.classList.remove('hidden');
+  });
+}
+if (elements.closeWorkspaceModalBtn) {
+  elements.closeWorkspaceModalBtn.addEventListener('click', () => {
+    if (elements.workspaceModal) elements.workspaceModal.classList.add('hidden');
+  });
+}
+if (elements.dismissWorkspaceModalBtn) {
+  elements.dismissWorkspaceModalBtn.addEventListener('click', () => {
+    if (elements.workspaceModal) elements.workspaceModal.classList.add('hidden');
+    applyWorkspaceLayout();
+  });
+}
+
+document.querySelectorAll('.preset-card').forEach(card => {
+  card.addEventListener('click', () => {
+    const preset = card.getAttribute('data-preset');
+    if (preset) {
+      workspaceConfig.preset = preset;
+      applyWorkspaceLayout();
+    }
+  });
+});
+
+if (elements.toggleWatchlistPanel) {
+  elements.toggleWatchlistPanel.addEventListener('change', (e) => {
+    workspaceConfig.showWatchlist = e.target.checked;
+    applyWorkspaceLayout();
+  });
+}
+if (elements.toggleOrderPanel) {
+  elements.toggleOrderPanel.addEventListener('change', (e) => {
+    workspaceConfig.showOrder = e.target.checked;
+    applyWorkspaceLayout();
+  });
+}
+if (elements.toggleTapePanel) {
+  elements.toggleTapePanel.addEventListener('change', (e) => {
+    workspaceConfig.showTape = e.target.checked;
+    applyWorkspaceLayout();
+  });
+}
+
+// ==========================================
+// AUDIO SYNTHESIS SOUND BOARD MODAL (v0.9)
+// ==========================================
+function syncSoundBoardUI() {
+  if (elements.masterVolSlider) elements.masterVolSlider.value = Math.round(soundConfig.masterVolume * 100);
+  if (elements.masterVolVal) elements.masterVolVal.textContent = `${Math.round(soundConfig.masterVolume * 100)}%`;
+  if (elements.modalMuteToggleBtn) {
+    elements.modalMuteToggleBtn.textContent = soundConfig.muted ? 'UNMUTE' : 'MUTE';
+    elements.modalMuteToggleBtn.classList.toggle('active', soundConfig.muted);
+  }
+
+  document.querySelectorAll('.channel-slider').forEach(slider => {
+    const ch = slider.getAttribute('data-channel');
+    if (ch && soundConfig.channels[ch] !== undefined) {
+      slider.value = Math.round(soundConfig.channels[ch] * 100);
+    }
+  });
+}
+
+if (elements.soundBoardBtn) {
+  elements.soundBoardBtn.addEventListener('click', () => {
+    if (elements.soundBoardModal) {
+      syncSoundBoardUI();
+      elements.soundBoardModal.classList.remove('hidden');
+    }
+  });
+}
+if (elements.closeSoundBoardModalBtn) {
+  elements.closeSoundBoardModalBtn.addEventListener('click', () => {
+    if (elements.soundBoardModal) elements.soundBoardModal.classList.add('hidden');
+  });
+}
+if (elements.dismissSoundBoardModalBtn) {
+  elements.dismissSoundBoardModalBtn.addEventListener('click', () => {
+    if (elements.soundBoardModal) elements.soundBoardModal.classList.add('hidden');
+    try {
+      localStorage.setItem('marketarena_sound_config', JSON.stringify(soundConfig));
+    } catch (_) {}
+  });
+}
+
+if (elements.masterVolSlider) {
+  elements.masterVolSlider.addEventListener('input', (e) => {
+    soundConfig.masterVolume = parseInt(e.target.value) / 100;
+    if (elements.masterVolVal) elements.masterVolVal.textContent = `${e.target.value}%`;
+    try { localStorage.setItem('marketarena_sound_config', JSON.stringify(soundConfig)); } catch (_) {}
+  });
+}
+
+if (elements.modalMuteToggleBtn) {
+  elements.modalMuteToggleBtn.addEventListener('click', () => {
+    soundConfig.muted = !soundConfig.muted;
+    state.soundEnabled = !soundConfig.muted;
+    syncSoundBoardUI();
+    if (elements.audioToggle) elements.audioToggle.textContent = soundConfig.muted ? 'UNMUTE' : 'MUTE';
+    try { localStorage.setItem('marketarena_sound_config', JSON.stringify(soundConfig)); } catch (_) {}
+  });
+}
+
+document.querySelectorAll('.channel-slider').forEach(slider => {
+  slider.addEventListener('input', (e) => {
+    const ch = slider.getAttribute('data-channel');
+    if (ch) {
+      soundConfig.channels[ch] = parseInt(e.target.value) / 100;
+      try { localStorage.setItem('marketarena_sound_config', JSON.stringify(soundConfig)); } catch (_) {}
+    }
+  });
+});
+
+document.querySelectorAll('.btn-audition').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const ch = btn.getAttribute('data-channel');
+    if (ch) testAuditionSound(ch);
+  });
+});
+
+// ==========================================
+// MOBILE QUICK TRADE BAR & DRAWER (v0.9)
+// ==========================================
+function updateMobileTradeBar() {
+  if (!elements.mobileTradeSym || !elements.mobileTradePx) return;
+  elements.mobileTradeSym.textContent = state.selectedSymbol;
+  const comp = state.companies.get(state.selectedSymbol);
+  if (comp) {
+    elements.mobileTradePx.textContent = `${comp.price.toFixed(2)} CR`;
+  }
+}
+
+if (elements.mobileQuickBuyBtn) {
+  elements.mobileQuickBuyBtn.addEventListener('click', () => {
+    setOrderSide('BUY');
+    if (elements.colOrder) elements.colOrder.classList.add('mobile-drawer-open');
+  });
+}
+if (elements.mobileQuickSellBtn) {
+  elements.mobileQuickSellBtn.addEventListener('click', () => {
+    setOrderSide('SELL');
+    if (elements.colOrder) elements.colOrder.classList.add('mobile-drawer-open');
+  });
+}
+if (elements.closeOrderDrawerBtn) {
+  elements.closeOrderDrawerBtn.addEventListener('click', () => {
+    if (elements.colOrder) elements.colOrder.classList.remove('mobile-drawer-open');
+  });
+}
+
 // App Startup
 document.addEventListener('DOMContentLoaded', () => {
   initChart();
   initUser();
+  applyWorkspaceLayout();
+  updateMobileTradeBar();
 });

@@ -1841,5 +1841,268 @@ tbody tr:hover td {
   white-space: pre;
 }
 
+/* ----------------------------------------------------
+   WORKSPACE PRESETS & PANEL TOGGLES (v0.9)
+   ---------------------------------------------------- */
+.preset-card {
+  background: var(--panel-alt);
+  border: 1px solid var(--line);
+  padding: 12px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.preset-card:hover {
+  border-color: var(--line-focus);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.preset-card.active {
+  border-color: var(--amber);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.preset-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 4px;
+  letter-spacing: 0.04em;
+}
+
+.preset-sub {
+  font-size: 10px;
+  color: var(--text-dim);
+  line-height: 1.3;
+}
+
+/* Dynamic Layout Classes */
+#mainLayout.layout-chart-focus {
+  grid-template-columns: 1fr !important;
+}
+#mainLayout.layout-chart-focus #colWatchlist,
+#mainLayout.layout-chart-focus #colOrder {
+  display: none !important;
+}
+
+#mainLayout.layout-speed {
+  grid-template-columns: 1fr 340px !important;
+}
+#mainLayout.layout-speed #colWatchlist {
+  display: none !important;
+}
+
+#mainLayout.layout-analytics #colCenter .chart-area {
+  height: 220px !important;
+}
+
+/* ----------------------------------------------------
+   AUDIO SYNTHESIZER SOUND BOARD (v0.9)
+   ---------------------------------------------------- */
+.sound-channel-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--panel-alt);
+  border: 1px solid var(--line-soft);
+  padding: 8px 12px;
+  border-radius: 3px;
+}
+
+.sound-channel-row input[type="range"] {
+  flex: 1;
+  accent-color: var(--amber);
+  cursor: pointer;
+}
+
+.btn-audition {
+  font-size: 10px;
+  padding: 4px 8px;
+  min-width: 68px;
+}
+
+/* ----------------------------------------------------
+   MOBILE RESPONSIVE NAVIGATION & BOTTOM SHEET (v0.9)
+   ---------------------------------------------------- */
+.mobile-trade-bar {
+  display: none;
+}
+
+.drawer-close-bar {
+  display: none;
+}
+
+@media (max-width: 1200px) {
+  #mainLayout {
+    grid-template-columns: 220px 1fr 280px;
+  }
+  .chart-head {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+}
+
+@media (max-width: 992px) {
+  #mainLayout {
+    grid-template-columns: 1fr 300px;
+  }
+  #colWatchlist {
+    display: none;
+  }
+  .ticker-strip {
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+}
+
+@media (max-width: 768px) {
+  body {
+    padding-bottom: 60px;
+  }
+
+  .topbar {
+    flex-wrap: wrap;
+    height: auto;
+    padding: 6px 10px;
+    gap: 6px;
+  }
+
+  .ticker-strip {
+    order: 3;
+    width: 100%;
+    margin-top: 4px;
+    border-top: 1px solid var(--line-soft);
+    padding-top: 4px;
+  }
+
+  #mainLayout {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  #colWatchlist {
+    display: none;
+  }
+
+  #colCenter {
+    width: 100%;
+  }
+
+  .chart-area {
+    height: 300px;
+  }
+
+  /* Bottom sheet drawer on mobile */
+  #colOrder {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: -110%;
+    height: 82vh;
+    background: var(--panel);
+    z-index: 1001;
+    border-top: 2px solid var(--amber);
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.85);
+    transition: bottom 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    overflow-y: auto;
+    padding: 12px 16px 80px 16px;
+  }
+
+  #colOrder.mobile-drawer-open {
+    bottom: 0 !important;
+  }
+
+  .drawer-close-bar {
+    display: block;
+    background: #0f172a;
+    border: 1px solid #334155;
+    padding: 8px;
+    text-align: center;
+    color: #38bdf8;
+    font-weight: 700;
+    font-size: 11px;
+    cursor: pointer;
+    margin-bottom: 12px;
+    border-radius: 3px;
+  }
+
+  /* Mobile floating quick trade trigger */
+  .mobile-trade-bar {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 54px;
+    background: #090d16;
+    border-top: 1px solid #1e293b;
+    z-index: 950;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 14px;
+    box-shadow: 0 -4px 15px rgba(0,0,0,0.5);
+  }
+
+  .mobile-trade-meta {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .mobile-trade-sym {
+    font-weight: 800;
+    color: #f8fafc;
+    font-size: 13px;
+  }
+
+  .mobile-trade-px {
+    font-family: monospace;
+    color: #38bdf8;
+    font-size: 11px;
+  }
+
+  .mobile-trade-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .mobile-trade-actions button {
+    padding: 7px 18px;
+    font-weight: 700;
+    font-size: 12px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+
+  .tabs {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .brand-sub {
+    display: none;
+  }
+  .session-tag {
+    font-size: 10px;
+    padding: 3px 6px;
+    gap: 4px;
+  }
+  .tourney-bar {
+    padding: 2px 6px;
+  }
+  .chart-name {
+    font-size: 13px;
+  }
+  .type-row-6 {
+    grid-template-columns: repeat(3, 1fr) !important;
+  }
+}
+
+
 
 

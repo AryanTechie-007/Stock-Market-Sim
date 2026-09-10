@@ -46,6 +46,8 @@
     </div>
 
     <div class="topbar-right">
+      <button class="icon-toggle" id="layoutBtn" title="Workspace Layout Presets">LAYOUT</button>
+      <button class="icon-toggle" id="soundBoardBtn" title="Synthesized Audio Control Board">AUDIO</button>
       <button class="icon-toggle" id="apiKeyBtn" title="Developer Bot API" style="color:#38bdf8; border-color:rgba(56, 189, 248, 0.4);">DEV API</button>
       <button class="icon-toggle" id="audioToggle" title="Toggle sound">MUTE</button>
       <div class="acct" id="userPill">
@@ -63,10 +65,10 @@
   </div>
 
   <!-- Main 3-Column Layout -->
-  <div class="layout">
+  <div class="layout" id="mainLayout">
 
     <!-- LEFT: Watchlist & Fundamentals -->
-    <div class="col">
+    <div class="col" id="colWatchlist">
       <div class="panel-head">
         <span class="panel-title">Watchlist</span>
         <span class="panel-count">5 active</span>
@@ -91,7 +93,7 @@
     </div>
 
     <!-- CENTER: Chart & Execution Tape -->
-    <div class="col center-col">
+    <div class="col center-col" id="colCenter">
       <div class="chart-head">
         <div>
           <div class="chart-name"><span id="heroName">AutoCorp</span> <span class="chart-full">— <span id="heroSymbol">AUTO</span></span></div>
@@ -154,7 +156,8 @@
     </div>
 
     <!-- RIGHT: Order Entry & Depth Ladder -->
-    <div class="col">
+    <div class="col" id="colOrder">
+      <div class="drawer-close-bar hidden" id="closeOrderDrawerBtn">✕ CLOSE ORDER PAD</div>
       <div class="side-toggle">
         <button class="side-btn buy on" id="sideBuyTab">BUY</button>
         <button class="side-btn sell" id="sideSellTab">SELL</button>
@@ -599,6 +602,138 @@
 
         <button class="place-btn" id="dismissApiKeyModalBtn" style="margin-top:16px;">CLOSE PORTAL</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Workspace Layout Customization Modal (v0.9) -->
+  <div class="modal-overlay hidden" id="workspaceModal">
+    <div class="modal-box" style="max-width: 520px; width: 90%;">
+      <div class="modal-head">
+        <div class="modal-head-title-wrap">
+          <span class="badge-day" style="background:#8b5cf6; color:#fff;">v0.9 UX</span>
+          <span class="modal-title">WORKSPACE LAYOUT PRESETS</span>
+        </div>
+        <button class="modal-close-btn" id="closeWorkspaceModalBtn">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">Customize your multi-panel trading terminal layout for your monitor size and execution style.</p>
+        
+        <div style="font-size:11px; font-weight:700; color:#cbd5e1; margin-bottom:8px; letter-spacing:0.05em;">SELECT WORKSPACE PRESET</div>
+        <div class="preset-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:16px;">
+          <button class="preset-card active" data-preset="PRO" id="presetProBtn">
+            <div class="preset-title">PRO TERMINAL</div>
+            <div class="preset-sub">Default 3-column with Watchlist, Chart, Tape & Depth</div>
+          </button>
+          <button class="preset-card" data-preset="CHART_FOCUS" id="presetChartBtn">
+            <div class="preset-title">CHART FOCUS</div>
+            <div class="preset-sub">Maximized full-width technical analysis and execution tape</div>
+          </button>
+          <button class="preset-card" data-preset="SPEED" id="presetSpeedBtn">
+            <div class="preset-title">SPEED TRADER</div>
+            <div class="preset-sub">L2 depth ladder and order pad prioritized for scalping</div>
+          </button>
+          <button class="preset-card" data-preset="ANALYTICS" id="presetAnalyticsBtn">
+            <div class="preset-title">ANALYTICS HUD</div>
+            <div class="preset-sub">Expanded risk metrics, portfolio table, and tournament arena</div>
+          </button>
+        </div>
+
+        <div style="font-size:11px; font-weight:700; color:#cbd5e1; margin-bottom:8px; letter-spacing:0.05em;">PANEL VISIBILITY TOGGLES</div>
+        <div style="display:flex; flex-direction:column; gap:8px; background:#0f172a; border:1px solid #1e293b; padding:12px; margin-bottom:16px;">
+          <label style="display:flex; align-items:center; justify-content:space-between; font-size:12px; color:#f8fafc; cursor:pointer;">
+            <span>Left Watchlist & Fundamentals Panel</span>
+            <input type="checkbox" id="toggleWatchlistPanel" checked style="accent-color:#38bdf8;">
+          </label>
+          <label style="display:flex; align-items:center; justify-content:space-between; font-size:12px; color:#f8fafc; cursor:pointer;">
+            <span>Right Order Entry & Depth Panel</span>
+            <input type="checkbox" id="toggleOrderPanel" checked style="accent-color:#38bdf8;">
+          </label>
+          <label style="display:flex; align-items:center; justify-content:space-between; font-size:12px; color:#f8fafc; cursor:pointer;">
+            <span>Center Execution Tape Feed</span>
+            <input type="checkbox" id="toggleTapePanel" checked style="accent-color:#38bdf8;">
+          </label>
+        </div>
+
+        <button class="place-btn" id="dismissWorkspaceModalBtn">APPLY & CLOSE</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Audio Synthesis Sound Board Modal (v0.9) -->
+  <div class="modal-overlay hidden" id="soundBoardModal">
+    <div class="modal-box" style="max-width: 580px; width: 90%;">
+      <div class="modal-head">
+        <div class="modal-head-title-wrap">
+          <span class="badge-day" style="background:#10b981; color:#fff;">v0.9 AUDIO</span>
+          <span class="modal-title">SYNTHESIZED AUDIO SOUND BOARD</span>
+        </div>
+        <button class="modal-close-btn" id="closeSoundBoardModalBtn">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">Granular control over real-time synthesized harmonic Web Audio feedback channels.</p>
+        
+        <!-- Master Volume Bar -->
+        <div style="background:#0f172a; border:1px solid #1e293b; padding:12px; margin-bottom:14px; display:flex; align-items:center; justify-content:space-between; gap:12px;">
+          <span style="font-weight:700; color:#f8fafc; font-size:12px;">MASTER VOLUME</span>
+          <input type="range" id="masterVolSlider" min="0" max="100" value="80" style="flex:1; accent-color:#10b981; cursor:pointer;">
+          <span id="masterVolVal" style="font-family:monospace; color:#38bdf8; font-size:12px; width:36px; text-align:right;">80%</span>
+          <button class="btn-subtle" id="modalMuteToggleBtn" style="font-size:10px; padding:3px 8px;">MUTE</button>
+        </div>
+
+        <!-- Channels Grid -->
+        <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:16px;">
+          <!-- Channel 1: Fills -->
+          <div class="sound-channel-row">
+            <div style="width:140px; font-size:12px; color:#f8fafc; font-weight:600;">Trade Fills & Executions</div>
+            <input type="range" class="channel-slider" data-channel="fills" min="0" max="100" value="80">
+            <button class="btn-subtle btn-audition" data-channel="fills">AUDITION</button>
+          </div>
+          <!-- Channel 2: Ticks -->
+          <div class="sound-channel-row">
+            <div style="width:140px; font-size:12px; color:#f8fafc; font-weight:600;">Tape Order Ticks</div>
+            <input type="range" class="channel-slider" data-channel="ticks" min="0" max="100" value="60">
+            <button class="btn-subtle btn-audition" data-channel="ticks">AUDITION</button>
+          </div>
+          <!-- Channel 3: Alerts -->
+          <div class="sound-channel-row">
+            <div style="width:140px; font-size:12px; color:#f8fafc; font-weight:600;">Stop & Liquidation Alert</div>
+            <input type="range" class="channel-slider" data-channel="alerts" min="0" max="100" value="90">
+            <button class="btn-subtle btn-audition" data-channel="alerts">AUDITION</button>
+          </div>
+          <!-- Channel 4: Bells -->
+          <div class="sound-channel-row">
+            <div style="width:140px; font-size:12px; color:#f8fafc; font-weight:600;">Market Session Bells</div>
+            <input type="range" class="channel-slider" data-channel="bells" min="0" max="100" value="85">
+            <button class="btn-subtle btn-audition" data-channel="bells">AUDITION</button>
+          </div>
+          <!-- Channel 5: News -->
+          <div class="sound-channel-row">
+            <div style="width:140px; font-size:12px; color:#f8fafc; font-weight:600;">Breaking News Flash</div>
+            <input type="range" class="channel-slider" data-channel="news" min="0" max="100" value="70">
+            <button class="btn-subtle btn-audition" data-channel="news">AUDITION</button>
+          </div>
+          <!-- Channel 6: Fanfare -->
+          <div class="sound-channel-row">
+            <div style="width:140px; font-size:12px; color:#f8fafc; font-weight:600;">Milestone Fanfare</div>
+            <input type="range" class="channel-slider" data-channel="fanfare" min="0" max="100" value="85">
+            <button class="btn-subtle btn-audition" data-channel="fanfare">AUDITION</button>
+          </div>
+        </div>
+
+        <button class="place-btn" id="dismissSoundBoardModalBtn">SAVE PREFERENCES</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobile Quick Trade Floating Bar (v0.9) -->
+  <div class="mobile-trade-bar" id="mobileTradeBar">
+    <div class="mobile-trade-meta">
+      <span class="mobile-trade-sym" id="mobileTradeSym">AUTO</span>
+      <span class="mobile-trade-px" id="mobileTradePx">450.00 CR</span>
+    </div>
+    <div class="mobile-trade-actions">
+      <button class="side-btn buy on" id="mobileQuickBuyBtn">BUY</button>
+      <button class="side-btn sell on" id="mobileQuickSellBtn">SELL</button>
     </div>
   </div>
 
