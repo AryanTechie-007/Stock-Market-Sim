@@ -1,0 +1,16 @@
+{
+  "name": "stock-market-simulator",
+  "version": "1.0.0",
+  "description": "MarketArena — A gamified financial market simulator and laboratory with matching engine and NPC traders",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.3"
+  }
+}
