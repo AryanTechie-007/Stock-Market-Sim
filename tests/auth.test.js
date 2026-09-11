@@ -177,10 +177,12 @@ async function run() {
   console.log('[PASS] Full RESTful auth workflow (register -> me -> login -> logout) verified\n');
 
   console.log('[SUCCESS] ALL USER AUTHENTICATION & SESSION TESTS PASSED!\n');
+  try { storage.db?.close(); } catch (_) {}
   process.exit(0);
 }
 
 run().catch(err => {
   console.error('[FAIL]', err);
+  try { storage.db?.close(); } catch (_) {}
   process.exit(1);
 });

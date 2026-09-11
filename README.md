@@ -2,10 +2,10 @@
 
 ## Repository Metadata
 
-- **Current Pushed Version:** v0.905
+- **Current Pushed Version:** v0.906
 - **Username:** AryanTechie-007
-- **Push Timestamp:** 2026-09-11 15:45:00 IST (UTC+05:30)
-- **Current Status:** Deployed Build (Geometric Brownian Motion (GBM) Price Discovery Release)
+- **Push Timestamp:** 2026-09-11 15:52:00 IST (UTC+05:30)
+- **Current Status:** Deployed Build (News Impact Decay & Spike-and-Settle Release)
 - **Repository:** https://github.com/AryanTechie-007/Stock-Market-Sim
 
 ---
@@ -259,6 +259,20 @@ The web client provides a professional desktop terminal layout:
 - **Designated Market Maker Quote Centering:**
   - Designated Market Makers dynamically anchor two-sided quote ladders around fair value (blending last traded price with living intrinsic value), allowing fundamental drift to translate naturally into order-driven price discovery.
 
+### 14. News Impact Decay & Spike-and-Settle Engine (`engine/market.js`)
+- **Behavioral Overreaction & Digestion Modeling:**
+  - Implements realistic financial market response to economic catalysts and corporate breaking news:
+    1. **Immediate Overreaction (Spike Phase):** Confirmed news events overshoot fundamental value by 140% ($1.4\times$ multiplier), while speculative rumors produce higher speculative frenzy of 160% ($1.6\times$ multiplier).
+    2. **Exponential Digestion (Settling Phase):** Over a standard 30-second trading horizon, the transient overreaction undergoes continuous convex exponential digestion via normalized decay:
+       $$\alpha(\tau) = \frac{\exp(-3.0 \cdot \tau) - \exp(-3.0)}{1 - \exp(-3.0)} \quad \text{where } \tau = \frac{t}{D} \in [0, 1]$$
+    3. **Permanent Fundamental Residual:** Value smoothly converges to a permanent structural shift (~55% of raw impact for confirmed catalysts, ~30% for unconfirmed rumors).
+- **Log-Space Exact Multiplier Convergence:**
+  - Employs exact log-ratio step adjustments ($\ln(M_{\text{decay}}) = \ln(\frac{1 + \text{residualFactor}}{1 + \text{initialShockFactor}})$) ensuring mathematical convergence to theoretical residual targets with zero roundoff drift.
+- **Sentiment Decoupling and Reversion:**
+  - Sentiment metrics surge instantaneously on breaking catalysts and exponentially settle back toward baseline equilibrium alongside intrinsic value.
+- **Concurrent News Multi-Event Queue:**
+  - Supports overlapping concurrent catalysts across multiple symbols, tracking and resolving active decay curves independently.
+
 ---
 
 ## Technology Stack
@@ -446,6 +460,7 @@ node tests/v08_e2e_simulation.js
 41. Multi-stage Docker container build directives, alpine runtime minimization, docker-compose orchestration, and GitHub Actions CI workflow.
 42. Cryptographic scrypt password hashing, unique random salting, constant-time verification, session token lifecycle, and CSRF protection.
 43. Geometric Brownian Motion (GBM) Box-Muller normality, asset parameterization, Itô lognormal non-negativity, trading clock phase gating, regime volatility scaling, market maker fair value quotation, and anti-flatline quiet interval drift.
+44. News Impact Decay overreaction spike (140% confirmed, 160% rumor), convex exponential digestion trajectory, permanent residual convergence (~55%), bearish panic plunge-and-rebound, market maker quote adaptation, and multi-event concurrent queue resilience.
 
 ---
 
@@ -464,7 +479,8 @@ node tests/v08_e2e_simulation.js
 - **v0.902 (Pushed to GitHub):** Platform Stress Runner & Test Automation: Integrated multi-round automated stress testing suite (tests/stress_runner.test.js) and full repository regression runner (tests/full_regression.test.js) into standard npm test lifecycle scripts.
 - **v0.903 (Pushed to GitHub):** Production Docker Containerization & CI/CD Pipeline: Engineered multi-stage production Dockerfile based on node:22-alpine with non-root security boundaries and built-in HTTP healthchecks; authored docker-compose.yml with persistent SQLite volume mounts; configured .dockerignore rules; and established automated GitHub Actions CI workflow (.github/workflows/ci.yml) validating all test suites on node:20.x and node:22.x runners.
 - **v0.904 (Pushed to GitHub):** User Authentication, Password Hashing & Session Security: Built native cryptographic credentials subsystem (engine/auth.js) utilizing Node.js crypto.scryptSync with 16-byte random salts and constant-time timingSafeEqual verification; engineered SQLite relational tables (user_credentials, user_sessions) with foreign key relationships; created 24-hour cryptographically randomized session tokens (masess_...) and per-session CSRF tokens (macsrf_...); and mounted RESTful authentication endpoints (/api/v1/auth/register, /login, /me, /logout, /logout-all).
-- **v0.905 (Current Release):** Geometric Brownian Motion (GBM) Price Discovery Engine: Engineered continuous stochastic price discovery subsystem (`engine/market.js`) implementing Itô's Lemma Geometric Brownian Motion ($dS_t = \mu S_t dt + \sigma S_t dW_t$) with Box-Muller normal variate generation; parameterized all listed equities with quantitative annual drift ($\mu$) and annualized volatility ($\sigma$); coupled diffusion variance dynamically to `MarketRegimeEngine` multipliers (0.5x to 4.0x); gated stochastic execution strictly to `REGULAR_HOURS`; added quiet interval anti-flatline soft mean-reversion drift synchronizing multi-timeframe candlestick buffers; updated Designated Market Maker quoting logic (`traders/market-maker.js`) to anchor quote ladders around living fair value; and authored full 8-test verification suite (`tests/gbm.test.js`) integrated into multi-round stress runner and repository regression suite.
+- **v0.905 (Pushed to GitHub):** Geometric Brownian Motion (GBM) Price Discovery Engine: Engineered continuous stochastic price discovery subsystem (`engine/market.js`) implementing Itô's Lemma Geometric Brownian Motion ($dS_t = \mu S_t dt + \sigma S_t dW_t$) with Box-Muller normal variate generation; parameterized all listed equities with quantitative annual drift ($\mu$) and annualized volatility ($\sigma$); coupled diffusion variance dynamically to `MarketRegimeEngine` multipliers (0.5x to 4.0x); gated stochastic execution strictly to `REGULAR_HOURS`; added quiet interval anti-flatline soft mean-reversion drift synchronizing multi-timeframe candlestick buffers; updated Designated Market Maker quoting logic (`traders/market-maker.js`) to anchor quote ladders around living fair value; and authored full 8-test verification suite (`tests/gbm.test.js`) integrated into multi-round stress runner and repository regression suite.
+- **v0.906 (Current Release):** News Impact Decay & Spike-and-Settle Engine: Engineered behavioral news impact digestion subsystem (`engine/market.js`) modeling the empirical three-stage market response to news catalysts (immediate overreaction spike, 30-second convex exponential digestion, and permanent fundamental residual); parameterized confirmed news at 140% spike with 55% residual and speculative rumors at 160% spike with 30% residual; implemented exact log-ratio step multipliers strictly converging to theoretical targets; coupled sentiment decay and Market Maker quoting adaptation across the digestion horizon; and authored dedicated 7-test verification suite (`tests/news_decay.test.js`) integrated into multi-round stress runner and repository regression suite.
 
 
 

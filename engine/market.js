@@ -238,6 +238,10 @@ export class MarketManager extends EventEmitter {
     this._spareNormal = null;
     this._hasSpareNormal = false;
 
+    // News Impact Decay System (Spike-and-Settle Pattern)
+    this.activeNewsDecays = [];
+    this.newsDecayDurationSec = 30; // 30-second exponential digestion horizon
+
     this._initializeCompanies();
     this._bindEngineEvents();
     this._bindClockEvents();
@@ -358,11 +362,12 @@ export class MarketManager extends EventEmitter {
       this.emit('companiesUpdate', this.getAllCompanies());
     });
 
-    // Multi-timeframe 1-second tick evaluator & GBM price discovery
+    // Multi-timeframe 1-second tick evaluator, GBM price discovery, and news impact decay
     setInterval(() => {
       this._tickCandles();
       if (this.clock && this.clock.isTradingOpen()) {
         this._tickGBM();
+        this._tickNewsDecay();
       }
     }, 1000);
   }
@@ -391,22 +396,61 @@ export class MarketManager extends EventEmitter {
 
   triggerRandomEvent() {
     const eventTemplate = NEWS_EVENTS_POOL[Math.floor(Math.random() * NEWS_EVENTS_POOL.length)];
+    return this.triggerNewsEvent(eventTemplate);
+  }
+
+  /**
+   * Triggers a news event with an immediate overreaction spike followed by
+   * scheduled exponential decay back to a permanent residual level.
+   */
+  triggerNewsEvent(eventTemplate) {
     const event = {
-      id: `news_${Date.now()}`,
+      id: eventTemplate.id || `news_${Date.now()}`,
       headline: eventTemplate.headline,
       symbols: eventTemplate.symbols,
       sentiment: eventTemplate.sentiment,
-      isRumor: eventTemplate.isRumor,
-      timestamp: Date.now()
+      isRumor: Boolean(eventTemplate.isRumor),
+      impact: eventTemplate.impact || {},
+      timestamp: eventTemplate.timestamp || Date.now()
     };
 
-    // Apply sentiment and intrinsic value shift
-    for (const [sym, factor] of Object.entries(eventTemplate.impact)) {
+    // Realistic behavior: Rumors induce higher speculative frenzy (1.6x) and sharp decay (30% residual)
+    // Confirmed news induces 1.4x overreaction settling to 55% permanent fundamental shift
+    const overshootMultiplier = event.isRumor ? 1.60 : 1.40;
+    const residualRatio = event.isRumor ? 0.30 : 0.55;
+
+    // Apply immediate overreaction spike and register active decay tracker
+    for (const [sym, rawFactor] of Object.entries(event.impact)) {
       const comp = this.companies.get(sym);
-      if (comp) {
-        comp.intrinsicValue = +(comp.intrinsicValue * (1 + factor)).toFixed(2);
-        comp.sentiment = Math.max(-1, Math.min(1, +(comp.sentiment + factor * 5).toFixed(2)));
-      }
+      if (!comp) continue;
+
+      const initialShockFactor = rawFactor * overshootMultiplier;
+      const residualFactor = rawFactor * residualRatio;
+      const logDecayTarget = Math.log((1 + residualFactor) / (1 + initialShockFactor));
+
+      const initialSentimentShock = rawFactor * 5 * overshootMultiplier;
+      const residualSentiment = rawFactor * 5 * residualRatio;
+      const excessSentiment = initialSentimentShock - residualSentiment;
+
+      // Apply initial overreaction spike immediately
+      comp.intrinsicValue = +(comp.intrinsicValue * (1 + initialShockFactor)).toFixed(2);
+      if (comp.intrinsicValue < 1.00) comp.intrinsicValue = 1.00;
+      comp.sentiment = Math.max(-1, Math.min(1, +(comp.sentiment + initialSentimentShock).toFixed(2)));
+
+      // Register decay tracker to digest the excess overreaction over newsDecayDurationSec
+      this.activeNewsDecays.push({
+        id: `${event.id}_${sym}_${Date.now()}`,
+        newsId: event.id,
+        symbol: sym,
+        rawFactor,
+        overshootMultiplier,
+        residualRatio,
+        logDecayTarget,
+        excessSentiment,
+        durationSec: this.newsDecayDurationSec,
+        elapsedSec: 0,
+        prevAlpha: 1.0
+      });
     }
 
     this.newsFeed.unshift(event);
@@ -414,6 +458,7 @@ export class MarketManager extends EventEmitter {
 
     this.emit('news', event);
     this.emit('companiesUpdate', this.getAllCompanies());
+    return event;
   }
 
   _handleTrade(trade) {
@@ -605,6 +650,64 @@ export class MarketManager extends EventEmitter {
    */
   stepGBM(dt = null) {
     this._tickGBM(dt);
+  }
+
+  /**
+   * Evaluates exponential digestion of active news overreactions
+   * alpha(tau) = (exp(-3 * tau) - exp(-3)) / (1 - exp(-3)), tau in [0, 1]
+   */
+  _tickNewsDecay() {
+    if (this.activeNewsDecays.length === 0) return;
+
+    const remainingDecays = [];
+    const exp3 = Math.exp(-3.0);
+    const denom = 1.0 - exp3;
+    let companiesUpdated = false;
+
+    for (const decay of this.activeNewsDecays) {
+      const comp = this.companies.get(decay.symbol);
+      if (!comp) continue;
+
+      decay.elapsedSec++;
+      const progress = Math.min(1.0, decay.elapsedSec / decay.durationSec);
+      // Normalized exponential decay curve reaching strictly 0 at progress = 1.0
+      const currentAlpha = progress >= 1.0 ? 0.0 : (Math.exp(-3.0 * progress) - exp3) / denom;
+      const deltaAlpha = currentAlpha - decay.prevAlpha; // Negative value representing step decay
+      decay.prevAlpha = currentAlpha;
+
+      if (Math.abs(deltaAlpha) > 0.000001) {
+        // Step multiplier via log-decay strictly converging to residual
+        const stepMultiplier = Math.exp(-decay.logDecayTarget * deltaAlpha);
+        comp.intrinsicValue = +(comp.intrinsicValue * stepMultiplier).toFixed(2);
+        if (comp.intrinsicValue < 1.00) comp.intrinsicValue = 1.00;
+
+        // Apply decay to sentiment
+        const stepSentimentDelta = decay.excessSentiment * deltaAlpha;
+        comp.sentiment = Math.max(-1, Math.min(1, +(comp.sentiment + stepSentimentDelta).toFixed(2)));
+
+        companiesUpdated = true;
+      }
+
+      if (decay.elapsedSec < decay.durationSec) {
+        remainingDecays.push(decay);
+      }
+    }
+
+    this.activeNewsDecays = remainingDecays;
+    if (companiesUpdated) {
+      this.emit('companiesUpdate', this.getAllCompanies());
+    }
+  }
+
+  /**
+   * Programmatic step runner for active news decays
+   */
+  stepNewsDecay() {
+    this._tickNewsDecay();
+  }
+
+  getActiveNewsDecays() {
+    return [...this.activeNewsDecays];
   }
 
   getCompany(symbol) {
