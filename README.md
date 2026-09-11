@@ -2,10 +2,10 @@
 
 ## Repository Metadata
 
-- **Current Pushed Version:** v0.912
+- **Current Pushed Version:** v0.913
 - **Username:** AryanTechie-007
-- **Push Timestamp:** 2026-09-11 16:45:00 IST (UTC+05:30)
-- **Current Status:** Deployed Build (Options Chains & Black-Scholes-Merton Derivatives Release)
+- **Push Timestamp:** 2026-09-11 17:00:00 IST (UTC+05:30)
+- **Current Status:** Deployed Build (Dark Pool & ATS Midpoint Cross Release)
 - **Repository:** https://github.com/AryanTechie-007/Stock-Market-Sim
 
 ---
@@ -400,6 +400,37 @@ The web client provides a professional desktop terminal layout:
   - `GET /api/v1/derivatives/pricing`: On-demand Black-Scholes analytical pricer and Greeks calculator.
   - `GET /api/v1/derivatives/implied-volatility`: Numerical implied volatility recovery endpoint.
 
+### 22. Dark Pool & Alternative Trading System (ATS) Midpoint Cross (`engine/darkpool.js`)
+- **Non-Displayed Liquidity Venue:**
+  - Designed for institutional block orders requiring zero pre-trade footprint / market impact on the lit limit order book.
+  - Non-displayed buy and sell orders rest invisibly without appearing in Level 2 lit depth or altering public bid/ask quotes.
+- **National Best Bid and Offer (NBBO) Midpoint Matching:**
+  - Continuous reference pricing sampling the lit order book:
+    $$\text{Midpoint} = \frac{\text{BestBid} + \text{BestAsk}}{2}$$
+  - Enforces two-sided lit market validity; blocks execution under crossed or locked lit market conditions.
+- **Half-Spread Price Improvement:**
+  - Executes trades at the exact NBBO midpoint, providing half-spread price improvement for both parties:
+    $$\text{Buyer Savings} = (\text{BestAsk} - \text{Midpoint}) \cdot Q = \frac{\text{Spread}}{2} \cdot Q$$
+    $$\text{Seller Savings} = (\text{Midpoint} - \text{BestBid}) \cdot Q = \frac{\text{Spread}}{2} \cdot Q$$
+    $$\text{Total Savings} = \text{Spread} \cdot Q$$
+- **Advanced Dark Pool Order Types:**
+  - **Midpoint Peg (`MIDPOINT_PEG`):** Rests in the dark book, matching automatically when eligible contra liquidity appears or when lit quote moves trigger crossing.
+  - **Immediate-or-Cancel (`IOC_MIDPOINT`):** Immediately crosses against available resting dark liquidity; any unexecuted remainder is cancelled with instant capital/share unlock.
+  - **Limit Midpoint (`LIMIT_MIDPOINT`):** Midpoint peg with price boundary protection (buy ceiling, sell floor).
+  - **Minimum Execution Size (MES):** Conditional constraint ensuring orders only match when counterparty provides at least a specified minimum tranche size.
+- **Post-Trade Consolidated Tape Reporting & Privacy:**
+  - Executed crosses are immediately reported to the trade tape with `venue: 'DARK_POOL'` and `takerSide: 'ATS_MIDPOINT'`, updating volume and stock prices.
+  - Aggregated non-displayed depth (`getDarkBookDepth`) publishes total institutional interest without leaking individual participant identities or order sizes.
+- **RESTful Dark Pool Endpoints:**
+  - `GET /api/v1/darkpool/nbbo/:symbol`: Query current NBBO and calculated midpoint.
+  - `GET /api/v1/darkpool/depth/:symbol`: Aggregated non-displayed volume and order count.
+  - `GET /api/v1/darkpool/depth`: Platform-wide non-displayed depth overview.
+  - `GET /api/v1/darkpool/trades`: ATS trade execution history.
+  - `GET /api/v1/darkpool/stats`: Cumulative ATS volume, notional crossed, and total price improvement dollars saved.
+  - `POST /api/v1/darkpool/orders`: Submit institutional dark pool orders.
+  - `GET /api/v1/darkpool/orders`: Query open dark orders for account.
+  - `DELETE /api/v1/darkpool/orders/:orderId`: Cancel resting dark pool orders.
+
 ---
 
 ## Technology Stack
@@ -548,6 +579,11 @@ To execute the Options Chains and Black-Scholes-Merton derivatives test suite:
 node tests/options_derivatives.test.js
 ```
 
+To execute the Dark Pool and ATS Midpoint Cross test suite:
+```bash
+node tests/darkpool_ats.test.js
+```
+
 To execute the live WebSocket integration tests:
 ```bash
 node tests/tier2_e2e_simulation.js
@@ -610,6 +646,7 @@ node tests/v08_e2e_simulation.js
 49. Closing Call Auction volume-maximizing clearing price determination (P*), MOC execution priority, LOC boundary condition filtering, uniform single clearing price execution, automatic expiration of unfilled closing orders with collateral refund, and CLOSING_BELL official closePrice establishment.
 50. Indicative Auction Call HUD (IEP, IEV, imbalance surplus badge), Simulation World Macro Bar (policy interest rate, CPI inflation, real GDP growth, macro regime badge, active equity OBI & microprice pill), MOC/LOC order pad entry buttons, and real-time WebSocket / REST polling synchronization.
 51. Options Chains & Black-Scholes-Merton Derivatives Engine analytical Call/Put valuation, Abramowitz-Stegun standard normal CDF/PDF accuracy, exact Put-Call Parity verification ($C - P = S - K e^{-r T}$), first/second order Greeks ($\Delta, \Gamma, \mathcal{V}, \Theta, \rho$), Newton-Raphson/bisection implied volatility recovery, multi-expiration option chain generation, and RESTful derivatives endpoints.
+52. Dark Pool & Alternative Trading System (ATS) Midpoint Cross NBBO sampling, zero pre-trade market impact on lit books, exact midpoint matching, half-spread price improvement, Immediate-Or-Cancel (IOC) remainder cancellation, Minimum Execution Size (MES) constraint fulfillment, limit price boundary protection, dark order cancellation with complete capital/share refund, and RESTful ATS order management.
 
 ---
 
@@ -635,7 +672,8 @@ node tests/v08_e2e_simulation.js
 - **v0.909 (Pushed to GitHub):** Order Book Imbalance (OBI) Signals & Adverse Selection Quoting: Engineered Level 2 order book imbalance metrics ($OBI = \frac{V_{\text{bid}} - V_{\text{ask}}}{V_{\text{bid}} + V_{\text{ask}}} \in [-1.0, 1.0]$) and volume-weighted microprice leading indicators (`engine/orderbook.js`, `engine/matching.js`); integrated Avellaneda-Stoikov reservation price calculation and asymmetric spread protection into Market Maker quoting algorithms (`traders/market-maker.js`), expanding quote spreads against adverse flow by up to 2.2x and reducing quote exposure; mounted RESTful imbalance endpoints (`GET /api/v1/market/imbalance/:symbol`, `GET /api/v1/market/imbalance`); authored comprehensive 5-test unit suite (`tests/obi_signals.test.js`); and verified 100% reliability across 60-execution multi-round stress runner and 26-suite platform regression.
 - **v0.910 (Pushed to GitHub):** Closing Call Auction & Market-On-Close (MOC) / Limit-On-Close (LOC) Orders: Engineered institutional Closing Cross mechanism (`engine/orderbook.js`, `engine/matching.js`) executing at the 04:00 PM `CLOSING_BELL` at single uniform clearing price $P^*_{\text{close}}$ maximizing executable volume; added Market-On-Close (MOC) orders with infinite demand/supply priority and Limit-On-Close (LOC) orders with price boundary execution ($P^* \le P_{\text{limit}}$ for buy, $P^* \ge P_{\text{limit}}$ for sell); implemented automated post-cross order expiration and collateral refund with zero capital leakage; bound `CLOSING_BELL` clock lifecycle event to establish official session `closePrice` inherited by `previousClose` on new day rollover; mounted RESTful endpoints (`GET /api/v1/auction/closing/:symbol`, `GET /api/v1/auction/closing`); authored comprehensive 5-test suite (`tests/closing_auction.test.js`); and verified 100% reliability across 65-execution multi-round stress runner and 27-suite platform regression.
 - **v0.911 (Pushed to GitHub):** Indicative Auction Call HUD & Simulation World Macro Bar: Integrated persistent Simulation World Macro Bar (`#macroBar`) directly beneath the news ticker displaying live policy rate, CPI inflation, real GDP growth, dynamic macro regime badge, and active stock OBI flow pressure & volume-weighted microprice; engineered Indicative Auction Call HUD (`#auctionCallHud`) positioned immediately above the depth ladder streaming live Indicative Equilibrium Price (IEP), Indicative Equilibrium Volume (IEV), imbalance surplus badge (`BUY SURPLUS`, `SELL SURPLUS`, `MATCHED`, `NO CROSS`), and session phase tags; integrated MOC and LOC order buttons into the trading pad; wired real-time WebSocket listeners (`auction:closingIndicative`, `world:macro`) and REST background synchronizers; authored comprehensive 5-test verification suite (`tests/terminal_auction_macro.test.js`); and verified 100% reliability across 70-execution multi-round stress runner and 28-suite platform regression.
-- **v0.912 (Current Release):** Options Chains & Black-Scholes-Merton Derivatives Engine: Engineered analytical Black-Scholes European Call and Put derivatives valuation subsystem (`engine/options.js`) utilizing Abramowitz & Stegun rational normal distribution approximations; computed complete First and Second-Order Greeks suite ($\Delta, \Gamma, \mathcal{V}, \Theta, \rho$); built continuous Put-Call Parity validation; implemented numerical Implied Volatility solver via Newton-Raphson with bisection fallback; created OptionsChainManager generating dynamic multi-strike ladders across 4 standardized expiration cycles (7D, 14D, 30D, 60D) with theoretical quotes, spreads, open interest, and Greeks; mounted RESTful derivatives endpoints (`GET /api/v1/derivatives/options/:symbol`, `/api/v1/derivatives/options`, `/api/v1/derivatives/pricing`, `/api/v1/derivatives/implied-volatility`); authored comprehensive 7-test suite (`tests/options_derivatives.test.js`); and verified 100% reliability across 75-execution multi-round stress runner and 29-suite platform regression.
+- **v0.912 (Pushed to GitHub):** Options Chains & Black-Scholes-Merton Derivatives Engine: Engineered analytical Black-Scholes European Call and Put derivatives valuation subsystem (`engine/options.js`) utilizing Abramowitz & Stegun rational normal distribution approximations; computed complete First and Second-Order Greeks suite ($\Delta, \Gamma, \mathcal{V}, \Theta, \rho$); built continuous Put-Call Parity validation; implemented numerical Implied Volatility solver via Newton-Raphson with bisection fallback; created OptionsChainManager generating dynamic multi-strike ladders across 4 standardized expiration cycles (7D, 14D, 30D, 60D) with theoretical quotes, spreads, open interest, and Greeks; mounted RESTful derivatives endpoints (`GET /api/v1/derivatives/options/:symbol`, `/api/v1/derivatives/options`, `/api/v1/derivatives/pricing`, `/api/v1/derivatives/implied-volatility`); authored comprehensive 7-test suite (`tests/options_derivatives.test.js`); and verified 100% reliability across 75-execution multi-round stress runner and 29-suite platform regression.
+- **v0.913 (Current Release):** Dark Pool & Alternative Trading System (ATS) Midpoint Cross: Engineered institutional non-displayed liquidity venue (`engine/darkpool.js`) executing block orders at the National Best Bid and Offer (NBBO) midpoint with zero pre-trade market impact; implemented half-spread price improvement for buyers and sellers; supported Midpoint Peg, Immediate-or-Cancel (IOC_MIDPOINT), Limit Midpoint, and Minimum Execution Size (MES) order constraints; built post-trade consolidated tape reporting with venue flags (`DARK_POOL`), privacy-preserving aggregated non-displayed depth, and cumulative price improvement statistics; mounted RESTful ATS endpoints (`/api/v1/darkpool/nbbo/:symbol`, `/depth`, `/trades`, `/stats`, `/orders`); authored comprehensive 7-test suite (`tests/darkpool_ats.test.js`); and verified 100% reliability across 80-execution multi-round stress runner and 30-suite platform regression.
 
 
 

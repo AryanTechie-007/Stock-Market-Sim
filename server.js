@@ -16,6 +16,7 @@ import { APIKeyManager } from './engine/api-keys.js';
 import { TokenBucketRateLimiter } from './engine/rate-limiter.js';
 import { AuthManager } from './engine/auth.js';
 import { OptionsChainManager, priceCall, pricePut, calculateGreeks, calculateImpliedVolatility } from './engine/options.js';
+import { DarkPoolATS } from './engine/darkpool.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -46,6 +47,8 @@ const apiKeyManager = new APIKeyManager(storageManager);
 const rateLimiter = new TokenBucketRateLimiter({ capacity: 100, refillRate: 20 });
 const authManager = new AuthManager(storageManager);
 const optionsManager = new OptionsChainManager(marketManager);
+const darkPool = new DarkPoolATS(matchingEngine, accountManager, { minBlockSize: 10 });
+matchingEngine.darkPool = darkPool;
 
 // Wire regime events
 regimeEngine.on('regimeChange', (regime) => {
@@ -85,6 +88,17 @@ matchingEngine.on('closingAuction:cleared', (report) => {
 });
 matchingEngine.on('closingAuction:allCleared', (reports) => {
   io.emit('closingAuction:allCleared', reports);
+});
+
+// Wire Dark Pool ATS events
+darkPool.on('darkTrade', (trade) => {
+  io.emit('darkpool:trade', trade);
+});
+darkPool.on('darkOrderPlaced', (order) => {
+  io.emit('darkpool:depth', darkPool.getDarkBookDepth(order.symbol));
+});
+darkPool.on('darkOrderCancelled', (order) => {
+  io.emit('darkpool:depth', darkPool.getDarkBookDepth(order.symbol));
 });
 
 // Periodic broadcast of macroeconomic simulation world state
@@ -256,6 +270,39 @@ app.get('/api/v1/derivatives/implied-volatility', (req, res) => {
     impliedVolatility: iv,
     impliedVolatilityPct: +(iv * 100).toFixed(2)
   });
+});
+
+// --- Dark Pool & Alternative Trading System (ATS) (v0.913) ---
+app.get('/api/v1/darkpool/nbbo/:symbol', (req, res) => {
+  const symbol = (req.params.symbol || '').toUpperCase();
+  const nbbo = darkPool.getNBBO(symbol);
+  if (!nbbo.valid) {
+    return res.status(404).json(nbbo);
+  }
+  res.json(nbbo);
+});
+
+app.get('/api/v1/darkpool/depth/:symbol', (req, res) => {
+  const symbol = (req.params.symbol || '').toUpperCase();
+  res.json(darkPool.getDarkBookDepth(symbol));
+});
+
+app.get('/api/v1/darkpool/depth', (req, res) => {
+  res.json(darkPool.getAllDarkBookDepths());
+});
+
+app.get('/api/v1/darkpool/trades', (req, res) => {
+  const symbol = req.query.symbol ? req.query.symbol.toUpperCase() : null;
+  const limit = parseInt(req.query.limit) || 50;
+  const trades = darkPool.getTrades(symbol, limit);
+  res.json({
+    count: trades.length,
+    trades
+  });
+});
+
+app.get('/api/v1/darkpool/stats', (req, res) => {
+  res.json(darkPool.getStats());
 });
 
 app.get('/api/v1/orderbook/:symbol', (req, res) => {
@@ -478,6 +525,57 @@ app.delete('/api/v1/orders/:id', apiKeyManager.requireAuth('trade'), (req, res) 
     return res.status(400).json(result);
   }
 
+  res.json(result);
+});
+
+// --- Dark Pool Order Management Endpoints ---
+app.post('/api/v1/darkpool/orders', (req, res) => {
+  const orderData = req.body || {};
+  let userId = req.userId || req.headers['x-user-id'] || orderData.userId;
+  if (!userId) {
+    userId = 'guest_trader';
+  }
+
+  const user = accountManager.getUser(userId) || accountManager.getOrCreateUser(userId, orderData.userName || `Trader_${userId.slice(-4)}`, false);
+
+  const result = darkPool.submitOrder({
+    userId,
+    userName: user ? user.name : 'Dark Pool Trader',
+    symbol: orderData.symbol,
+    side: orderData.side,
+    type: orderData.type,
+    quantity: orderData.quantity,
+    price: orderData.price,
+    minQuantity: orderData.minQuantity,
+    leverage: orderData.leverage,
+    isShort: orderData.isShort
+  });
+
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+
+  sendPortfolioUpdate(userId);
+  res.status(201).json(result);
+});
+
+app.get('/api/v1/darkpool/orders', (req, res) => {
+  const userId = req.userId || req.headers['x-user-id'] || req.query.userId;
+  if (!userId) {
+    return res.status(400).json({ error: 'User ID is required' });
+  }
+  const orders = darkPool.getUserOrders(userId);
+  res.json({ userId, count: orders.length, orders });
+});
+
+app.delete('/api/v1/darkpool/orders/:orderId', (req, res) => {
+  const orderId = req.params.orderId;
+  const userId = req.userId || req.headers['x-user-id'] || req.query.userId || null;
+  const result = darkPool.cancelOrder(orderId, userId);
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+  if (userId) sendPortfolioUpdate(userId);
   res.json(result);
 });
 
