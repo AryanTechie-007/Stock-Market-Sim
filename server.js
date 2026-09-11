@@ -68,13 +68,29 @@ tournamentManager.on('tournamentConcluded', (podium) => {
   io.emit('tournament:concluded', podium);
 });
 
-// Wire opening auction events
+// Wire opening & closing auction events
 matchingEngine.on('auction:indicative', (data) => {
   io.emit('auction:indicative', data);
 });
 matchingEngine.on('auction:cleared', (report) => {
   io.emit('auction:cleared', report);
 });
+matchingEngine.on('auction:closingIndicative', (data) => {
+  io.emit('auction:closingIndicative', data);
+});
+matchingEngine.on('closingAuction:cleared', (report) => {
+  io.emit('closingAuction:cleared', report);
+});
+matchingEngine.on('closingAuction:allCleared', (reports) => {
+  io.emit('closingAuction:allCleared', reports);
+});
+
+// Periodic broadcast of macroeconomic simulation world state
+setInterval(() => {
+  if (marketManager.simulationNews) {
+    io.emit('world:macro', marketManager.simulationNews.getWorldState());
+  }
+}, 5000);
 
 // Static frontend
 app.use(express.static(path.join(__dirname, 'public')));

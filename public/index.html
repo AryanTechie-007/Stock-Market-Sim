@@ -64,6 +64,40 @@
     <span id="newsHeadline">Market opened smoothly — liquidity providers have initiated standard two-sided quotations.</span>
   </div>
 
+  <!-- Simulation World Macro Bar (v0.911) -->
+  <div class="macro-bar" id="macroBar">
+    <div class="macro-group">
+      <div class="macro-item" title="Central Bank Policy Rate">
+        <span class="macro-label">POLICY RATE</span>
+        <span class="macro-val" id="macroFedRate">5.25%</span>
+      </div>
+      <div class="macro-item" title="Consumer Price Index Inflation (YoY)">
+        <span class="macro-label">INFLATION CPI</span>
+        <span class="macro-val" id="macroCpi">3.10%</span>
+      </div>
+      <div class="macro-item" title="Real GDP Growth Trend">
+        <span class="macro-label">REAL GDP</span>
+        <span class="macro-val" id="macroGdp">+2.30%</span>
+      </div>
+      <div class="macro-item" title="Macroeconomic Simulation Regime">
+        <span class="macro-label">REGIME</span>
+        <span class="macro-badge" id="macroRegimePill">EXPANSION</span>
+      </div>
+    </div>
+    <div class="macro-divider"></div>
+    <div class="macro-group">
+      <div class="macro-item macro-obi" title="Order Book Imbalance (Top 5 Depth Levels)">
+        <span class="macro-label">ORDER IMBALANCE (OBI)</span>
+        <span class="macro-val" id="macroObiVal">+0.00</span>
+        <span class="macro-pill" id="macroObiPill">NEUTRAL</span>
+      </div>
+      <div class="macro-item" title="Volume-Weighted Microprice">
+        <span class="macro-label">MICROPRICE</span>
+        <span class="macro-val" id="macroMicroprice">--- CR</span>
+      </div>
+    </div>
+  </div>
+
   <!-- Main 3-Column Layout -->
   <div class="layout" id="mainLayout">
 
@@ -172,6 +206,10 @@
           <div class="type-btn" id="typeTrailingStopBtn">TRAILING</div>
           <div class="type-btn" id="typeOcoBtn">OCO BRKT</div>
         </div>
+        <div class="auction-order-row" id="auctionOrderRow">
+          <div class="type-btn" id="typeMocBtn" title="Market-On-Close Auction Cross Order">MOC (CLOSE)</div>
+          <div class="type-btn" id="typeLocBtn" title="Limit-On-Close Auction Cross Order">LOC (CLOSE)</div>
+        </div>
 
         <div class="field" id="limitPriceField">
           <div class="field-label">
@@ -262,6 +300,31 @@
         <button type="submit" class="place-btn" id="submitOrderBtn">PLACE BUY ORDER</button>
         <div class="order-error-msg" id="orderErrorMsg"></div>
       </form>
+
+      <!-- Indicative Auction Call HUD (v0.911) -->
+      <div class="auction-hud" id="auctionCallHud">
+        <div class="auction-hud-head">
+          <div class="auction-hud-title">
+            <span class="auction-pulse-dot" id="auctionPulseDot"></span>
+            <span id="auctionHudTitle">INDICATIVE CALL AUCTION</span>
+          </div>
+          <span class="auction-phase-tag" id="auctionPhaseBadge">REGULAR MOC/LOC</span>
+        </div>
+        <div class="auction-hud-grid">
+          <div class="auction-stat">
+            <span class="auction-stat-lbl">INDICATIVE PX</span>
+            <span class="auction-stat-val" id="iepValue">--- CR</span>
+          </div>
+          <div class="auction-stat">
+            <span class="auction-stat-lbl">MATCHED VOL</span>
+            <span class="auction-stat-val" id="ievValue">0 sh</span>
+          </div>
+          <div class="auction-stat">
+            <span class="auction-stat-lbl">IMBALANCE</span>
+            <span class="auction-imbalance-badge badge-neutral" id="imbalanceBadge">BALANCED</span>
+          </div>
+        </div>
+      </div>
 
       <!-- Order Book Depth Ladder -->
       <div class="depth-head">

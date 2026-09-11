@@ -2103,6 +2103,238 @@ tbody tr:hover td {
   }
 }
 
+/* ----------------------------------------------------
+   SIMULATION WORLD MACRO BAR (v0.911)
+   ---------------------------------------------------- */
+.macro-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: #0d1013;
+  border-bottom: 1px solid var(--line);
+  padding: 5px 14px;
+  font-size: 11px;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.macro-group {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.macro-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.macro-label {
+  font-family: var(--sans);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  color: var(--text-faint);
+}
+
+.macro-val {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.macro-badge {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 5px;
+  background: #192723;
+  border: 1px solid var(--green);
+  color: var(--green);
+}
+
+.macro-badge.regime-contraction {
+  background: #2a1815;
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.macro-badge.regime-inflation {
+  background: #2b2518;
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+.macro-divider {
+  width: 1px;
+  height: 14px;
+  background: var(--line);
+}
+
+.macro-pill {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 5px;
+  background: #171c22;
+  border: 1px solid var(--line);
+  color: var(--text-dim);
+}
+
+.macro-pill.buy-surplus {
+  background: #14241c;
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.macro-pill.sell-surplus {
+  background: #271615;
+  border-color: var(--red);
+  color: var(--red);
+}
+
+/* ----------------------------------------------------
+   INDICATIVE AUCTION CALL HUD & AUCTION ORDERS (v0.911)
+   ---------------------------------------------------- */
+.auction-order-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--line);
+  margin-top: 4px;
+  margin-bottom: 12px;
+}
+
+.auction-order-row .type-btn {
+  font-size: 10px;
+  padding: 5px;
+  background: var(--panel);
+  text-align: center;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.auction-order-row .type-btn:hover {
+  color: var(--text);
+  background: var(--panel-alt);
+}
+
+.auction-order-row .type-btn.on {
+  background: #241d15;
+  color: var(--amber);
+  border: 1px solid #4a3b22;
+}
+
+.auction-hud {
+  background: #0f1317;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid #33291a;
+  padding: 8px 12px;
+  margin-bottom: 2px;
+}
+
+.auction-hud-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.auction-hud-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--sans);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--amber);
+}
+
+.auction-pulse-dot {
+  width: 6px;
+  height: 6px;
+  background: var(--amber);
+  box-shadow: 0 0 6px var(--amber);
+  animation: pulse-hud 2s infinite ease-in-out;
+}
+
+@keyframes pulse-hud {
+  0% { opacity: 0.4; }
+  50% { opacity: 1; }
+  100% { opacity: 0.4; }
+}
+
+.auction-phase-tag {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  padding: 1px 5px;
+  background: #1e1913;
+  border: 1px solid #4a3b22;
+  color: var(--amber);
+}
+
+.auction-hud-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.2fr;
+  gap: 6px;
+  background: var(--panel-alt);
+  border: 1px solid var(--line);
+  padding: 6px 8px;
+}
+
+.auction-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.auction-stat-lbl {
+  font-family: var(--sans);
+  font-size: 8.5px;
+  color: var(--text-faint);
+  letter-spacing: 0.3px;
+}
+
+.auction-stat-val {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.auction-imbalance-badge {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 600;
+  padding: 2px 4px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.badge-neutral {
+  background: #14171b;
+  border: 1px solid var(--line);
+  color: var(--text-dim);
+}
+
+.badge-buy {
+  background: #122218;
+  border: 1px solid var(--green);
+  color: var(--green);
+}
+
+.badge-sell {
+  background: #261514;
+  border: 1px solid var(--red);
+  color: var(--red);
+}
+
 
 
 

@@ -284,6 +284,15 @@ const elements = {
   modalMuteToggleBtn: document.getElementById('modalMuteToggleBtn'),
   // News
   newsHeadline: document.getElementById('newsHeadline'),
+  // Simulation World Macro Bar (v0.911)
+  macroBar: document.getElementById('macroBar'),
+  macroFedRate: document.getElementById('macroFedRate'),
+  macroCpi: document.getElementById('macroCpi'),
+  macroGdp: document.getElementById('macroGdp'),
+  macroRegimePill: document.getElementById('macroRegimePill'),
+  macroObiVal: document.getElementById('macroObiVal'),
+  macroObiPill: document.getElementById('macroObiPill'),
+  macroMicroprice: document.getElementById('macroMicroprice'),
   // Watchlist & Fundamentals
   watchlistContainer: document.getElementById('watchlistContainer'),
   fundTitle: document.getElementById('fundTitle'),
@@ -318,6 +327,8 @@ const elements = {
   typeStopLimitBtn: document.getElementById('typeStopLimitBtn'),
   typeTrailingStopBtn: document.getElementById('typeTrailingStopBtn'),
   typeOcoBtn: document.getElementById('typeOcoBtn'),
+  typeMocBtn: document.getElementById('typeMocBtn'),
+  typeLocBtn: document.getElementById('typeLocBtn'),
   limitPriceField: document.getElementById('limitPriceField'),
   orderPriceInput: document.getElementById('orderPriceInput'),
   useBestPriceBtn: document.getElementById('useBestPriceBtn'),
@@ -341,6 +352,13 @@ const elements = {
   submitOrderBtn: document.getElementById('submitOrderBtn'),
   orderErrorMsg: document.getElementById('orderErrorMsg'),
   orderForm: document.getElementById('orderForm'),
+  // Indicative Auction Call HUD (v0.911)
+  auctionCallHud: document.getElementById('auctionCallHud'),
+  auctionHudTitle: document.getElementById('auctionHudTitle'),
+  auctionPhaseBadge: document.getElementById('auctionPhaseBadge'),
+  iepValue: document.getElementById('iepValue'),
+  ievValue: document.getElementById('ievValue'),
+  imbalanceBadge: document.getElementById('imbalanceBadge'),
   // Order Book
   asksContainer: document.getElementById('asksContainer'),
   bidsContainer: document.getElementById('bidsContainer'),
@@ -1086,6 +1104,11 @@ function selectSymbol(symbol) {
 
   // Update mobile bottom bar
   updateMobileTradeBar();
+
+  // Fetch macro & indicative auction state (v0.911)
+  if (typeof fetchMacroAndAuctionState === 'function') {
+    fetchMacroAndAuctionState(symbol);
+  }
 }
 
 function renderOrderBook(depth) {
@@ -1487,9 +1510,11 @@ function setOrderType(type) {
   elements.typeStopLimitBtn.classList.toggle('on', type === 'STOP_LIMIT');
   if (elements.typeTrailingStopBtn) elements.typeTrailingStopBtn.classList.toggle('on', type === 'TRAILING_STOP');
   if (elements.typeOcoBtn) elements.typeOcoBtn.classList.toggle('on', type === 'OCO');
+  if (elements.typeMocBtn) elements.typeMocBtn.classList.toggle('on', type === 'MOC');
+  if (elements.typeLocBtn) elements.typeLocBtn.classList.toggle('on', type === 'LOC');
 
   // Limit Price Field visibility
-  if (type === 'LIMIT' || type === 'STOP_LIMIT') {
+  if (type === 'LIMIT' || type === 'STOP_LIMIT' || type === 'LOC') {
     elements.limitPriceField.classList.remove('hidden');
     elements.limitPriceField.style.display = 'block';
   } else {
@@ -1561,12 +1586,14 @@ function updateCostEstimate() {
   if (!comp) return;
 
   let price = comp.price;
-  if (state.orderType === 'LIMIT' || state.orderType === 'STOP_LIMIT') {
+  if (state.orderType === 'LIMIT' || state.orderType === 'STOP_LIMIT' || state.orderType === 'LOC') {
     price = parseFloat(elements.orderPriceInput.value) || comp.price;
   } else if (state.orderType === 'STOP_LOSS') {
     price = parseFloat(elements.orderStopPriceInput.value) || comp.price;
   } else if (state.orderType === 'OCO') {
     price = parseFloat(elements.orderOcoLimitInput.value) || comp.price;
+  } else if (state.orderType === 'MOC') {
+    price = comp.price * 1.05;
   }
 
   const qty = parseInt(elements.orderQtyInput.value, 10) || 0;
@@ -1589,6 +1616,8 @@ elements.typeStopLossBtn.addEventListener('click', () => setOrderType('STOP_LOSS
 elements.typeStopLimitBtn.addEventListener('click', () => setOrderType('STOP_LIMIT'));
 if (elements.typeTrailingStopBtn) elements.typeTrailingStopBtn.addEventListener('click', () => setOrderType('TRAILING_STOP'));
 if (elements.typeOcoBtn) elements.typeOcoBtn.addEventListener('click', () => setOrderType('OCO'));
+if (elements.typeMocBtn) elements.typeMocBtn.addEventListener('click', () => setOrderType('MOC'));
+if (elements.typeLocBtn) elements.typeLocBtn.addEventListener('click', () => setOrderType('LOC'));
 
 if (elements.lev1Btn) elements.lev1Btn.addEventListener('click', () => setLeverage(1));
 if (elements.lev2Btn) elements.lev2Btn.addEventListener('click', () => setLeverage(2));
@@ -1740,8 +1769,8 @@ elements.orderForm.addEventListener('submit', (e) => {
     return;
   }
 
-  // Standard or Conditional Orders
-  const price = (state.orderType === 'LIMIT' || state.orderType === 'STOP_LIMIT')
+  // Standard, Conditional, or Auction Cross Orders
+  const price = (state.orderType === 'LIMIT' || state.orderType === 'STOP_LIMIT' || state.orderType === 'LOC')
     ? parseFloat(elements.orderPriceInput.value)
     : comp.price;
 
@@ -1753,7 +1782,7 @@ elements.orderForm.addEventListener('submit', (e) => {
     ? (parseFloat(elements.orderTrailingDeltaInput.value) || 5.0)
     : undefined;
 
-  if ((state.orderType === 'LIMIT' || state.orderType === 'STOP_LIMIT') && (!price || price <= 0)) {
+  if ((state.orderType === 'LIMIT' || state.orderType === 'STOP_LIMIT' || state.orderType === 'LOC') && (!price || price <= 0)) {
     elements.orderErrorMsg.textContent = 'Valid limit price required';
     return;
   }
@@ -1777,7 +1806,7 @@ elements.orderForm.addEventListener('submit', (e) => {
     symbol: state.selectedSymbol,
     side: state.orderSide,
     type: state.orderType,
-    price,
+    price: state.orderType === 'MOC' ? undefined : price,
     stopPrice,
     trailingDelta,
     leverage: state.leverage || 1,
@@ -2494,6 +2523,189 @@ function setCodeTab(tab) {
 if (elements.btnTabPython) elements.btnTabPython.addEventListener('click', () => setCodeTab('python'));
 if (elements.btnTabNode) elements.btnTabNode.addEventListener('click', () => setCodeTab('node'));
 if (elements.btnTabCurl) elements.btnTabCurl.addEventListener('click', () => setCodeTab('curl'));
+
+// ==========================================
+// SIMULATION WORLD MACRO BAR & AUCTION HUD (v0.911)
+// ==========================================
+function updateMacroBar(worldData, obiData) {
+  if (worldData) {
+    if (elements.macroFedRate) elements.macroFedRate.textContent = `${Number(worldData.interestRate || 5.25).toFixed(2)}%`;
+    if (elements.macroCpi) elements.macroCpi.textContent = `${Number(worldData.cpiInflation || 3.10).toFixed(2)}%`;
+    const gdp = Number(worldData.gdpGrowth || 2.30);
+    if (elements.macroGdp) {
+      elements.macroGdp.textContent = `${gdp >= 0 ? '+' : ''}${gdp.toFixed(2)}%`;
+      elements.macroGdp.className = `macro-val ${gdp >= 0 ? 'up' : 'down'}`;
+    }
+    if (elements.macroRegimePill && worldData.marketRegime) {
+      const reg = String(worldData.marketRegime).toUpperCase();
+      elements.macroRegimePill.textContent = reg;
+      elements.macroRegimePill.className = `macro-badge ${
+        reg.includes('CONTRACTION') ? 'regime-contraction' :
+        reg.includes('INFLATION') ? 'regime-inflation' : 'regime-expansion'
+      }`;
+    }
+  }
+
+  if (obiData) {
+    const imb = obiData.imbalance !== undefined ? obiData.imbalance : 0;
+    const sign = imb >= 0 ? '+' : '';
+    if (elements.macroObiVal) {
+      elements.macroObiVal.textContent = `${sign}${imb.toFixed(2)}`;
+      elements.macroObiVal.className = `macro-val ${imb > 0.05 ? 'up' : imb < -0.05 ? 'down' : 'flat'}`;
+    }
+    if (elements.macroObiPill) {
+      if (imb > 0.10) {
+        elements.macroObiPill.textContent = 'BUY SURPLUS';
+        elements.macroObiPill.className = 'macro-pill buy-surplus';
+      } else if (imb < -0.10) {
+        elements.macroObiPill.textContent = 'SELL SURPLUS';
+        elements.macroObiPill.className = 'macro-pill sell-surplus';
+      } else {
+        elements.macroObiPill.textContent = 'BALANCED';
+        elements.macroObiPill.className = 'macro-pill';
+      }
+    }
+    if (elements.macroMicroprice && obiData.microprice) {
+      elements.macroMicroprice.textContent = `${Number(obiData.microprice).toFixed(2)} CR`;
+    }
+  }
+}
+
+function updateIndicativeAuctionHud(auctionData) {
+  if (!auctionData || !elements.auctionCallHud) return;
+
+  const isPreMarket = state.clock && state.clock.phase === 'PRE_MARKET';
+  const isPostMarket = state.clock && state.clock.phase === 'POST_MARKET';
+
+  if (elements.auctionPhaseBadge) {
+    elements.auctionPhaseBadge.textContent = isPreMarket
+      ? 'PRE-MARKET OPEN CROSS'
+      : isPostMarket
+      ? 'POST-MARKET CLOSED'
+      : 'CLOSING MOC/LOC CROSS';
+  }
+
+  if (elements.auctionHudTitle) {
+    elements.auctionHudTitle.textContent = isPreMarket ? 'OPENING CALL AUCTION' : 'CLOSING CALL AUCTION';
+  }
+
+  // IEP (Indicative Equilibrium Price)
+  const iep = auctionData.clearingPrice || auctionData.indicativePrice;
+  if (elements.iepValue) {
+    elements.iepValue.textContent = (iep && iep > 0) ? `${Number(iep).toFixed(2)} CR` : '--- CR';
+  }
+
+  // IEV (Indicative Equilibrium Volume)
+  const iev = auctionData.clearingVolume !== undefined
+    ? auctionData.clearingVolume
+    : (auctionData.indicativeVolume !== undefined ? auctionData.indicativeVolume : 0);
+  if (elements.ievValue) {
+    elements.ievValue.textContent = `${Number(iev).toLocaleString()} sh`;
+  }
+
+  // Imbalance Badge
+  const imbShares = auctionData.imbalanceShares !== undefined
+    ? auctionData.imbalanceShares
+    : (auctionData.imbalance || 0);
+  const imbSide = auctionData.imbalanceSide || 'NONE';
+
+  if (elements.imbalanceBadge) {
+    if (imbShares > 0 && imbSide === 'BUY') {
+      elements.imbalanceBadge.textContent = `BUY SURPLUS +${imbShares}`;
+      elements.imbalanceBadge.className = 'auction-imbalance-badge badge-buy';
+    } else if (imbShares > 0 && imbSide === 'SELL') {
+      elements.imbalanceBadge.textContent = `SELL SURPLUS +${imbShares}`;
+      elements.imbalanceBadge.className = 'auction-imbalance-badge badge-sell';
+    } else if (iev > 0) {
+      elements.imbalanceBadge.textContent = 'MATCHED';
+      elements.imbalanceBadge.className = 'auction-imbalance-badge badge-neutral';
+    } else {
+      elements.imbalanceBadge.textContent = 'NO CROSS';
+      elements.imbalanceBadge.className = 'auction-imbalance-badge badge-neutral';
+    }
+  }
+}
+
+async function fetchMacroAndAuctionState(symbol) {
+  const sym = symbol || state.selectedSymbol || 'AUTO';
+  try {
+    const [worldRes, obiRes] = await Promise.all([
+      fetch('/api/v1/world/state').then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch(`/api/v1/market/imbalance/${sym}?depth=5`).then(r => r.ok ? r.json() : null).catch(() => null)
+    ]);
+    if (worldRes || obiRes) {
+      updateMacroBar(worldRes, obiRes);
+    }
+  } catch (_) {}
+
+  try {
+    const isPreMarket = state.clock && state.clock.phase === 'PRE_MARKET';
+    const endpoint = isPreMarket ? `/api/v1/auction/${sym}` : `/api/v1/auction/closing/${sym}`;
+    const aucRes = await fetch(endpoint).then(r => r.ok ? r.json() : null).catch(() => null);
+    if (aucRes) {
+      updateIndicativeAuctionHud(aucRes);
+    }
+  } catch (_) {}
+}
+
+// Global exposure for external test suites & diagnostics
+if (typeof window !== 'undefined') {
+  window.updateMacroBar = updateMacroBar;
+  window.updateIndicativeAuctionHud = updateIndicativeAuctionHud;
+  window.fetchMacroAndAuctionState = fetchMacroAndAuctionState;
+}
+
+// Wire Socket Listeners for Macro and Indicative Auction
+socket.on('world:macro', (macroData) => {
+  updateMacroBar(macroData, null);
+});
+
+socket.on('auction:indicative', (data) => {
+  if (data && (!data.symbol || data.symbol === state.selectedSymbol)) {
+    updateIndicativeAuctionHud(data);
+  }
+});
+
+socket.on('auction:closingIndicative', (data) => {
+  if (data && (!data.symbol || data.symbol === state.selectedSymbol)) {
+    updateIndicativeAuctionHud(data);
+  }
+});
+
+socket.on('auction:cleared', (report) => {
+  if (report && (!report.symbol || report.symbol === state.selectedSymbol)) {
+    updateIndicativeAuctionHud({
+      indicativePrice: report.clearingPrice,
+      indicativeVolume: report.clearingVolume,
+      imbalance: 0,
+      imbalanceSide: 'NONE'
+    });
+  }
+});
+
+socket.on('closingAuction:cleared', (report) => {
+  if (report && (!report.symbol || report.symbol === state.selectedSymbol)) {
+    updateIndicativeAuctionHud({
+      clearingPrice: report.clearingPrice,
+      clearingVolume: report.clearingVolume,
+      imbalanceShares: 0,
+      imbalanceSide: 'NONE'
+    });
+  }
+});
+
+socket.on('clock:phaseChange', () => {
+  if (state.selectedSymbol) {
+    fetchMacroAndAuctionState(state.selectedSymbol);
+  }
+});
+
+// Periodic background refresh for macro indicators and auction HUD
+setInterval(() => {
+  if (state.selectedSymbol) {
+    fetchMacroAndAuctionState(state.selectedSymbol);
+  }
+}, 4000);
 
 // ==========================================
 // WORKSPACE LAYOUT PRESETS & CUSTOMIZATION (v0.9)

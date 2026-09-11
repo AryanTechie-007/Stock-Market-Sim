@@ -2,10 +2,10 @@
 
 ## Repository Metadata
 
-- **Current Pushed Version:** v0.910
+- **Current Pushed Version:** v0.911
 - **Username:** AryanTechie-007
-- **Push Timestamp:** 2026-09-11 16:35:00 IST (UTC+05:30)
-- **Current Status:** Deployed Build (Closing Call Auction & MOC/LOC Orders Release)
+- **Push Timestamp:** 2026-09-11 16:40:00 IST (UTC+05:30)
+- **Current Status:** Deployed Build (Indicative Auction Call HUD & Simulation World Macro Bar Release)
 - **Repository:** https://github.com/AryanTechie-007/Stock-Market-Sim
 
 ---
@@ -353,6 +353,25 @@ The web client provides a professional desktop terminal layout:
   - `GET /api/v1/auction/closing/:symbol`: Query Indicative Equilibrium Price and Volume for symbol close.
   - `GET /api/v1/auction/closing`: Market-wide closing cross indicative report across all listed instruments.
 
+### 20. Indicative Auction Call HUD & Simulation World Macro Bar (`public/`)
+- **Simulation World Macro Bar:**
+  - Dedicated persistent macroeconomic terminal ribbon (`#macroBar`) situated directly below the breaking news ticker.
+  - Displays real-time stateful macroeconomic indicators:
+    - **Central Bank Policy Interest Rate (`#macroFedRate`):** Benchmarked at baseline 5.25% with live monetary policy rate shifts.
+    - **Inflation CPI YoY (`#macroCpi`):** Tracked against baseline 3.10% with dynamic economic surges.
+    - **Real GDP Growth Trend (`#macroGdp`):** Real-time annualized economic output expansion (+2.30%) with color-coded direction.
+    - **Macroeconomic Regime Badge (`#macroRegimePill`):** Visual regime indicator dynamically styled across `EXPANSION` (emerald), `CONTRACTION` (crimson), `INFLATION_SURGE` (amber), and `TECH_RALLY` (sky blue).
+  - Integrated Order Book Imbalance (OBI) & Microprice Pill (`#macroObiPill`, `#macroMicroprice`): Displays active stock order flow pressure (`BUY SURPLUS`, `SELL SURPLUS`, `BALANCED`) and volume-weighted microprice.
+- **Indicative Auction Call HUD:**
+  - Compact glassmorphic / dark panel widget (`#auctionCallHud`) positioned immediately above the L2 order book depth ladder.
+  - Displays pre-cross indicative auction metrics streamed live from the matching engine:
+    - **Indicative Equilibrium Price (IEP, `#iepValue`):** Real-time clearing price $P^*$ that would execute if uncrossing occurred immediately.
+    - **Indicative Equilibrium Volume (IEV, `#ievValue`):** Total matched share volume that would clear at $P^*$.
+    - **Imbalance Surplus Badge (`#imbalanceBadge`):** Color-coded volume surplus indicator (`BUY SURPLUS +N`, `SELL SURPLUS +N`, `MATCHED`, or `NO CROSS`).
+    - **Auction Phase Tag (`#auctionPhaseBadge`):** Dynamic session indicator transitioning between `PRE-MARKET OPEN CROSS`, `CLOSING MOC/LOC CROSS`, and `POST-MARKET CLOSED`.
+- **Auction Cross Order Entry:**
+  - Integrated `MOC (CLOSE)` and `LOC (CLOSE)` order buttons into the order pad (`#typeMocBtn`, `#typeLocBtn`), enabling manual trader participation in closing call market auctions.
+
 ---
 
 ## Technology Stack
@@ -486,6 +505,16 @@ To execute the user authentication and session security test suite:
 node tests/auth.test.js
 ```
 
+To execute the closing call auction and MOC/LOC test suite:
+```bash
+node tests/closing_auction.test.js
+```
+
+To execute the Indicative Auction Call HUD and Simulation World Macro Bar test suite:
+```bash
+node tests/terminal_auction_macro.test.js
+```
+
 To execute the live WebSocket integration tests:
 ```bash
 node tests/tier2_e2e_simulation.js
@@ -546,6 +575,7 @@ node tests/v08_e2e_simulation.js
 47. Multi-Asset Correlation Engine 10x10 matrix symmetry, analytical Cholesky factorization exact reconstruction ($||\mathbf{L} \mathbf{L}^T - \mathbf{\Sigma}|| < 10^{-15}$), Monte Carlo empirical covariance convergence ($N=10,000$), correlated Wiener diffusion co-movement frequency, and 500-step long-horizon multi-asset stability.
 48. Order Book Imbalance (OBI) mathematical boundary conditions ([-1.0, +1.0]), top-K depth windowing, volume-weighted microprice leading indicator, market maker adverse selection quote adaptation, and Avellaneda-Stoikov inventory rebalancing.
 49. Closing Call Auction volume-maximizing clearing price determination (P*), MOC execution priority, LOC boundary condition filtering, uniform single clearing price execution, automatic expiration of unfilled closing orders with collateral refund, and CLOSING_BELL official closePrice establishment.
+50. Indicative Auction Call HUD (IEP, IEV, imbalance surplus badge), Simulation World Macro Bar (policy interest rate, CPI inflation, real GDP growth, macro regime badge, active equity OBI & microprice pill), MOC/LOC order pad entry buttons, and real-time WebSocket / REST polling synchronization.
 
 ---
 
@@ -569,7 +599,8 @@ node tests/v08_e2e_simulation.js
 - **v0.907 (Pushed to GitHub):** Opening Auction Mechanism, Simulation World News Engine & Multi-Asset Expansion: Implemented call market opening auction mechanism (`engine/orderbook.js`, `engine/matching.js`) with pre-market order accumulation, volume-maximizing clearing price algorithm ($P^*$), multi-tier tie-breaking, and uniform single clearing price execution establishing session `openPrice`; expanded listed equity universe to 10 companies across 6 economic sectors (`AUTO`, `SOLR`, `BYTE`, `NBNK`, `MEDL`, `AERO`, `SEMI`, `RETL`, `CYBR`, `STRM`); engineered stateful Simulation World News Engine (`engine/news-engine.js`) generating procedural macroeconomic, sector, quarterly earnings, corporate, and rumor catalysts; expanded autonomous NPC trader fleet to 23 bots introducing High-Frequency Scalpers (`traders/scalper.js`) and News Sentiment Momentum Reactors (`traders/news-reactor.js`); authored dedicated automated suites (`tests/opening_auction.test.js`, `tests/simulation_world.test.js`) and verified across 50-execution multi-round stress runner and 24-suite platform regression.
 - **v0.908 (Pushed to GitHub):** Multi-Asset Correlation Engine via Cholesky Factorization: Implemented native analytical Cholesky decomposition ($\mathbf{\Sigma} = \mathbf{L} \mathbf{L}^T$) across a positive semi-definite 10x10 correlation matrix spanning all listed equities; transformed independent standard normal Gaussian variates into correlated multi-asset Wiener shock vectors ($\mathbf{dW}_t = \mathbf{L} \cdot \mathbf{Z}_t \sqrt{\Delta t}$); integrated correlated diffusion into Geometric Brownian Motion continuous price discovery; exposed RESTful matrix inspection endpoint (`GET /api/v1/market/correlation`); authored 5-test analytical and Monte Carlo verification suite (`tests/cholesky_correlation.test.js`) achieving machine-precision matrix reconstruction error ($< 10^{-15}$); and verified 100% reliability across 55-execution multi-round stress runner and 25-suite platform regression.
 - **v0.909 (Pushed to GitHub):** Order Book Imbalance (OBI) Signals & Adverse Selection Quoting: Engineered Level 2 order book imbalance metrics ($OBI = \frac{V_{\text{bid}} - V_{\text{ask}}}{V_{\text{bid}} + V_{\text{ask}}} \in [-1.0, 1.0]$) and volume-weighted microprice leading indicators (`engine/orderbook.js`, `engine/matching.js`); integrated Avellaneda-Stoikov reservation price calculation and asymmetric spread protection into Market Maker quoting algorithms (`traders/market-maker.js`), expanding quote spreads against adverse flow by up to 2.2x and reducing quote exposure; mounted RESTful imbalance endpoints (`GET /api/v1/market/imbalance/:symbol`, `GET /api/v1/market/imbalance`); authored comprehensive 5-test unit suite (`tests/obi_signals.test.js`); and verified 100% reliability across 60-execution multi-round stress runner and 26-suite platform regression.
-- **v0.910 (Current Release):** Closing Call Auction & Market-On-Close (MOC) / Limit-On-Close (LOC) Orders: Engineered institutional Closing Cross mechanism (`engine/orderbook.js`, `engine/matching.js`) executing at the 04:00 PM `CLOSING_BELL` at single uniform clearing price $P^*_{\text{close}}$ maximizing executable volume; added Market-On-Close (MOC) orders with infinite demand/supply priority and Limit-On-Close (LOC) orders with price boundary execution ($P^* \le P_{\text{limit}}$ for buy, $P^* \ge P_{\text{limit}}$ for sell); implemented automated post-cross order expiration and collateral refund with zero capital leakage; bound `CLOSING_BELL` clock lifecycle event to establish official session `closePrice` inherited by `previousClose` on new day rollover; mounted RESTful endpoints (`GET /api/v1/auction/closing/:symbol`, `GET /api/v1/auction/closing`); authored comprehensive 5-test suite (`tests/closing_auction.test.js`); and verified 100% reliability across 65-execution multi-round stress runner and 27-suite platform regression.
+- **v0.910 (Pushed to GitHub):** Closing Call Auction & Market-On-Close (MOC) / Limit-On-Close (LOC) Orders: Engineered institutional Closing Cross mechanism (`engine/orderbook.js`, `engine/matching.js`) executing at the 04:00 PM `CLOSING_BELL` at single uniform clearing price $P^*_{\text{close}}$ maximizing executable volume; added Market-On-Close (MOC) orders with infinite demand/supply priority and Limit-On-Close (LOC) orders with price boundary execution ($P^* \le P_{\text{limit}}$ for buy, $P^* \ge P_{\text{limit}}$ for sell); implemented automated post-cross order expiration and collateral refund with zero capital leakage; bound `CLOSING_BELL` clock lifecycle event to establish official session `closePrice` inherited by `previousClose` on new day rollover; mounted RESTful endpoints (`GET /api/v1/auction/closing/:symbol`, `GET /api/v1/auction/closing`); authored comprehensive 5-test suite (`tests/closing_auction.test.js`); and verified 100% reliability across 65-execution multi-round stress runner and 27-suite platform regression.
+- **v0.911 (Current Release):** Indicative Auction Call HUD & Simulation World Macro Bar: Integrated persistent Simulation World Macro Bar (`#macroBar`) directly beneath the news ticker displaying live policy rate, CPI inflation, real GDP growth, dynamic macro regime badge, and active stock OBI flow pressure & volume-weighted microprice; engineered Indicative Auction Call HUD (`#auctionCallHud`) positioned immediately above the depth ladder streaming live Indicative Equilibrium Price (IEP), Indicative Equilibrium Volume (IEV), imbalance surplus badge (`BUY SURPLUS`, `SELL SURPLUS`, `MATCHED`, `NO CROSS`), and session phase tags; integrated MOC and LOC order buttons into the trading pad; wired real-time WebSocket listeners (`auction:closingIndicative`, `world:macro`) and REST background synchronizers; authored comprehensive 5-test verification suite (`tests/terminal_auction_macro.test.js`); and verified 100% reliability across 70-execution multi-round stress runner and 28-suite platform regression.
 
 
 
