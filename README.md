@@ -2,10 +2,10 @@
 
 ## Repository Metadata
 
-- **Current Pushed Version:** v0.904
+- **Current Pushed Version:** v0.905
 - **Username:** AryanTechie-007
-- **Push Timestamp:** 2026-09-11 00:14:00 IST (UTC+05:30)
-- **Current Status:** Deployed Build (User Authentication, Password Hashing & Session Security Release)
+- **Push Timestamp:** 2026-09-11 15:45:00 IST (UTC+05:30)
+- **Current Status:** Deployed Build (Geometric Brownian Motion (GBM) Price Discovery Release)
 - **Repository:** https://github.com/AryanTechie-007/Stock-Market-Sim
 
 ---
@@ -241,6 +241,24 @@ The web client provides a professional desktop terminal layout:
     - Channel 6: Milestone Fanfare & Tournament Podium (triad fanfare chords)
   - Full volume configuration and mute settings persisted in browser storage.
 
+### 13. Geometric Brownian Motion (GBM) Price Discovery Engine (`engine/market.js`)
+- **Stochastic Continuous Price Discovery:**
+  - Continuous Itô process simulation modeling equity price discovery via Geometric Brownian Motion:
+    $$dS_t = \mu S_t dt + \sigma S_t dW_t$$
+  - Discrete simulation step evaluation based on analytical Itô lognormal solution:
+    $$S_{t + \Delta t} = S_t \cdot \exp\left( \left(\mu - \frac{1}{2}\sigma^2\right) \Delta t + \sigma \sqrt{\Delta t} \, Z_t \right)$$
+    where $Z_t \sim \mathcal{N}(0, 1)$ is generated via the Box-Muller transformation.
+- **Annualized Drift and Volatility Parameters:**
+  - Each listed company is parameterized with individual expected annual capital appreciation ($\mu \in [0.06, 0.16]$) and annualized volatility ($\sigma \in [0.1587, 0.3969]$) scaled to simulation time steps ($\Delta t = \frac{1}{252 \times 180}$).
+- **Macroeconomic Regime Volatility Multipliers:**
+  - Diffusion term $\sigma \sqrt{\Delta t} Z_t$ scales dynamically with `MarketRegimeEngine` multipliers (from 0.5x in `LOW_VOLATILITY` to 4.0x in `FLASH_CRASH`).
+- **Trading Session Phase Gating:**
+  - GBM stochastic ticks run continuously during `REGULAR_HOURS` and automatically halt during `PRE_MARKET` and `POST_MARKET` settlement cycles.
+- **Anti-Flatline Quiet Interval Protection:**
+  - If a stock experiences $\ge 3$ seconds without trade execution, soft mean-reversion nudges the market price toward living intrinsic value, synchronizing active candlestick bodies and eliminating artificial flatlines.
+- **Designated Market Maker Quote Centering:**
+  - Designated Market Makers dynamically anchor two-sided quote ladders around fair value (blending last traded price with living intrinsic value), allowing fundamental drift to translate naturally into order-driven price discovery.
+
 ---
 
 ## Technology Stack
@@ -427,6 +445,7 @@ node tests/v08_e2e_simulation.js
 40. Multi-round platform stress testing suite (5 consecutive rounds, 25 test executions) and repository-wide regression runner.
 41. Multi-stage Docker container build directives, alpine runtime minimization, docker-compose orchestration, and GitHub Actions CI workflow.
 42. Cryptographic scrypt password hashing, unique random salting, constant-time verification, session token lifecycle, and CSRF protection.
+43. Geometric Brownian Motion (GBM) Box-Muller normality, asset parameterization, Itô lognormal non-negativity, trading clock phase gating, regime volatility scaling, market maker fair value quotation, and anti-flatline quiet interval drift.
 
 ---
 
@@ -444,7 +463,9 @@ node tests/v08_e2e_simulation.js
 - **v0.901 (Pushed to GitHub):** Frontend Terminal Event System & Button Interaction Hotfix: Eliminated dangling HTML template tokens that caused JavaScript parsing syntax errors in app.js, restored complete browser button click responsiveness across order pads, workspace presets, and sound boards, and added automated compile-time syntax validation to frontend modernization test suite.
 - **v0.902 (Pushed to GitHub):** Platform Stress Runner & Test Automation: Integrated multi-round automated stress testing suite (tests/stress_runner.test.js) and full repository regression runner (tests/full_regression.test.js) into standard npm test lifecycle scripts.
 - **v0.903 (Pushed to GitHub):** Production Docker Containerization & CI/CD Pipeline: Engineered multi-stage production Dockerfile based on node:22-alpine with non-root security boundaries and built-in HTTP healthchecks; authored docker-compose.yml with persistent SQLite volume mounts; configured .dockerignore rules; and established automated GitHub Actions CI workflow (.github/workflows/ci.yml) validating all test suites on node:20.x and node:22.x runners.
-- **v0.904 (Current Release):** User Authentication, Password Hashing & Session Security: Built native cryptographic credentials subsystem (engine/auth.js) utilizing Node.js crypto.scryptSync with 16-byte random salts and constant-time timingSafeEqual verification; engineered SQLite relational tables (user_credentials, user_sessions) with foreign key relationships; created 24-hour cryptographically randomized session tokens (masess_...) and per-session CSRF tokens (macsrf_...); and mounted RESTful authentication endpoints (/api/v1/auth/register, /login, /me, /logout, /logout-all).
+- **v0.904 (Pushed to GitHub):** User Authentication, Password Hashing & Session Security: Built native cryptographic credentials subsystem (engine/auth.js) utilizing Node.js crypto.scryptSync with 16-byte random salts and constant-time timingSafeEqual verification; engineered SQLite relational tables (user_credentials, user_sessions) with foreign key relationships; created 24-hour cryptographically randomized session tokens (masess_...) and per-session CSRF tokens (macsrf_...); and mounted RESTful authentication endpoints (/api/v1/auth/register, /login, /me, /logout, /logout-all).
+- **v0.905 (Current Release):** Geometric Brownian Motion (GBM) Price Discovery Engine: Engineered continuous stochastic price discovery subsystem (`engine/market.js`) implementing Itô's Lemma Geometric Brownian Motion ($dS_t = \mu S_t dt + \sigma S_t dW_t$) with Box-Muller normal variate generation; parameterized all listed equities with quantitative annual drift ($\mu$) and annualized volatility ($\sigma$); coupled diffusion variance dynamically to `MarketRegimeEngine` multipliers (0.5x to 4.0x); gated stochastic execution strictly to `REGULAR_HOURS`; added quiet interval anti-flatline soft mean-reversion drift synchronizing multi-timeframe candlestick buffers; updated Designated Market Maker quoting logic (`traders/market-maker.js`) to anchor quote ladders around living fair value; and authored full 8-test verification suite (`tests/gbm.test.js`) integrated into multi-round stress runner and repository regression suite.
+
 
 
 

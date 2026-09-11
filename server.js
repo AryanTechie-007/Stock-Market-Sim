@@ -47,6 +47,7 @@ const authManager = new AuthManager(storageManager);
 
 // Wire regime events
 regimeEngine.on('regimeChange', (regime) => {
+  marketManager.setRegimeMultiplier(regime.volatilityMultiplier);
   io.emit('regime:change', regime);
 });
 regimeEngine.on('tick', (data) => {

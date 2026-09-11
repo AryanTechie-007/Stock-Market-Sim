@@ -15,6 +15,8 @@ export const INITIAL_COMPANIES = [
     intrinsicValue: 450,
     sentiment: 0, // -1.0 to +1.0
     volatility: 0.015,
+    annualReturn: 0.08, // 8.0% annual expected return (GBM drift mu)
+    annualVolatility: 0.2381, // 23.81% annualized volatility (GBM diffusion sigma = 0.015 * sqrt(252))
     fundamentals: {
       marketCap: '45.0B',
       peRatio: 16.4,
@@ -38,6 +40,8 @@ export const INITIAL_COMPANIES = [
     intrinsicValue: 280,
     sentiment: 0.1,
     volatility: 0.025,
+    annualReturn: 0.14, // 14.0% annual expected return (clean tech growth drift)
+    annualVolatility: 0.3969, // 39.69% annualized volatility (0.025 * sqrt(252))
     fundamentals: {
       marketCap: '28.0B',
       peRatio: 28.5,
@@ -61,6 +65,8 @@ export const INITIAL_COMPANIES = [
     intrinsicValue: 1200,
     sentiment: 0.2,
     volatility: 0.022,
+    annualReturn: 0.16, // 16.0% annual expected return (AI enterprise drift)
+    annualVolatility: 0.3492, // 34.92% annualized volatility (0.022 * sqrt(252))
     fundamentals: {
       marketCap: '120.0B',
       peRatio: 34.2,
@@ -84,6 +90,8 @@ export const INITIAL_COMPANIES = [
     intrinsicValue: 620,
     sentiment: 0,
     volatility: 0.010,
+    annualReturn: 0.06, // 6.0% annual expected return (defensive banking dividend drift)
+    annualVolatility: 0.1587, // 15.87% annualized volatility (0.010 * sqrt(252))
     fundamentals: {
       marketCap: '62.0B',
       peRatio: 11.2,
@@ -107,6 +115,8 @@ export const INITIAL_COMPANIES = [
     intrinsicValue: 890,
     sentiment: 0,
     volatility: 0.018,
+    annualReturn: 0.10, // 10.0% annual expected return (biopharmaceutical drift)
+    annualVolatility: 0.2857, // 28.57% annualized volatility (0.018 * sqrt(252))
     fundamentals: {
       marketCap: '89.0B',
       peRatio: 22.0,
@@ -222,6 +232,12 @@ export class MarketManager extends EventEmitter {
     this.maxTradesHistory = 80;
     this.newsTimer = null;
 
+    // Geometric Brownian Motion (GBM) Price Discovery Engine
+    this.gbmEnabled = true;
+    this.regimeMultiplier = 1.0;
+    this._spareNormal = null;
+    this._hasSpareNormal = false;
+
     this._initializeCompanies();
     this._bindEngineEvents();
     this._bindClockEvents();
@@ -241,7 +257,9 @@ export class MarketManager extends EventEmitter {
       this.companies.set(comp.symbol, {
         ...comp,
         volume: 0,
-        tradesCount: 0
+        tradesCount: 0,
+        lastTradeTimeSec: nowSec,
+        gbmHistory: { ticks: 0, cumulativeDrift: 1.0 }
       });
 
       let latestClose = comp.basePrice;
@@ -340,9 +358,12 @@ export class MarketManager extends EventEmitter {
       this.emit('companiesUpdate', this.getAllCompanies());
     });
 
-    // Multi-timeframe 1-second tick evaluator
+    // Multi-timeframe 1-second tick evaluator & GBM price discovery
     setInterval(() => {
       this._tickCandles();
+      if (this.clock && this.clock.isTradingOpen()) {
+        this._tickGBM();
+      }
     }, 1000);
   }
 
@@ -399,6 +420,7 @@ export class MarketManager extends EventEmitter {
     const comp = this.companies.get(trade.symbol);
     if (!comp) return;
 
+    comp.lastTradeTimeSec = Math.floor(Date.now() / 1000);
     comp.price = trade.price;
     comp.volume += trade.quantity;
     comp.tradesCount++;
@@ -475,6 +497,114 @@ export class MarketManager extends EventEmitter {
         this.candles.set(sym, defBuffers.get(sym));
       }
     }
+  }
+
+  setRegimeMultiplier(multiplier) {
+    this.regimeMultiplier = typeof multiplier === 'number' && multiplier > 0 ? multiplier : 1.0;
+  }
+
+  /**
+   * Box-Muller transformation generating standard normal random variates Z ~ N(0, 1)
+   */
+  _randomNormal() {
+    if (this._hasSpareNormal) {
+      this._hasSpareNormal = false;
+      return this._spareNormal;
+    }
+    let u = 0;
+    let v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    const mag = Math.sqrt(-2.0 * Math.log(u));
+    this._spareNormal = mag * Math.sin(2.0 * Math.PI * v);
+    this._hasSpareNormal = true;
+    return mag * Math.cos(2.0 * Math.PI * v);
+  }
+
+  /**
+   * Continuous Geometric Brownian Motion (GBM) price discovery tick
+   * S(t + dt) = S(t) * exp((mu - 0.5 * sigma^2) * dt + sigma * dW)
+   * where dW = Z * sqrt(dt), Z ~ N(0, 1)
+   */
+  _tickGBM(customDt = null) {
+    if (!this.gbmEnabled) return;
+    if (this.clock && !this.clock.isTradingOpen() && !customDt) return;
+
+    const sessionDurationSec = (this.clock && this.clock.durations && this.clock.durations.REGULAR_HOURS) || 180;
+    const dt = customDt || (1 / (252 * sessionDurationSec));
+    const sqrtDt = Math.sqrt(dt);
+    const nowSec = Math.floor(Date.now() / 1000);
+    const priceUpdates = [];
+
+    for (const comp of this.companies.values()) {
+      const annualReturn = comp.annualReturn ?? 0.08;
+      const baseVol = comp.annualVolatility ?? (comp.volatility * Math.sqrt(252));
+      const annualVol = baseVol * (this.regimeMultiplier || 1.0);
+
+      const z = this._randomNormal();
+      const dW = z * sqrtDt;
+
+      const drift = (annualReturn - 0.5 * annualVol * annualVol) * dt;
+      const diffusion = annualVol * dW;
+      const gbmMultiplier = Math.exp(drift + diffusion);
+
+      comp.intrinsicValue = +(comp.intrinsicValue * gbmMultiplier).toFixed(2);
+      if (comp.intrinsicValue < 1.00) comp.intrinsicValue = 1.00;
+
+      if (!comp.gbmHistory) {
+        comp.gbmHistory = { ticks: 0, cumulativeDrift: 1.0 };
+      }
+      comp.gbmHistory.ticks++;
+      comp.gbmHistory.cumulativeDrift *= gbmMultiplier;
+
+      // Soft mean-reversion drift during quiet trading intervals (>= 3s without a trade fill)
+      const secondsSinceTrade = nowSec - (comp.lastTradeTimeSec || nowSec);
+      if (secondsSinceTrade >= 3) {
+        const gap = comp.intrinsicValue - comp.price;
+        const softPull = +(gap * 0.05).toFixed(2);
+        if (Math.abs(softPull) >= 0.01) {
+          comp.price = +(comp.price + softPull).toFixed(2);
+          if (comp.highPrice === null || comp.price > comp.highPrice) comp.highPrice = comp.price;
+          if (comp.lowPrice === null || comp.price < comp.lowPrice) comp.lowPrice = comp.price;
+
+          for (const tf of this.timeframes) {
+            const tfActiveMap = this.activeCandles.get(tf);
+            if (tfActiveMap) {
+              const activeCandle = tfActiveMap.get(comp.symbol);
+              if (activeCandle) {
+                activeCandle.close = comp.price;
+                activeCandle.high = Math.max(activeCandle.high, comp.price);
+                activeCandle.low = Math.min(activeCandle.low, comp.price);
+              }
+            }
+          }
+
+          priceUpdates.push({
+            symbol: comp.symbol,
+            price: comp.price,
+            change: +(comp.price - comp.previousClose).toFixed(2),
+            changePercent: +(((comp.price - comp.previousClose) / comp.previousClose) * 100).toFixed(2),
+            high: comp.highPrice,
+            low: comp.lowPrice,
+            volume: comp.volume
+          });
+        }
+      }
+    }
+
+    for (const update of priceUpdates) {
+      this.emit('priceUpdate', update);
+    }
+    if (priceUpdates.length > 0) {
+      this.emit('companiesUpdate', this.getAllCompanies());
+    }
+  }
+
+  /**
+   * Programmatic / test step runner for GBM simulation
+   */
+  stepGBM(dt = null) {
+    this._tickGBM(dt);
   }
 
   getCompany(symbol) {

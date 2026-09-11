@@ -50,14 +50,17 @@ export class MarketMaker extends BaseTrader {
     if (!target) return;
 
     const symbol = target.symbol;
-    const lastPrice = target.price;
+    // Calculate fair reference price: blend last traded price with dynamic GBM intrinsic value
+    const fairPrice = (typeof target.intrinsicValue === 'number' && target.intrinsicValue > 0)
+      ? +(target.price * 0.35 + target.intrinsicValue * 0.65).toFixed(2)
+      : target.price;
 
     // First cancel old quotes for this symbol to refresh ladder
     this.cancelAllMyOrders(symbol);
 
     const spreadMult = this.volatilitySpreads.get(symbol) || 1.0;
     const effectiveSpread = this.spreadTarget * spreadMult * (this.regimeMultiplier || 1.0);
-    const halfSpread = (lastPrice * effectiveSpread) / 2;
+    const halfSpread = (fairPrice * effectiveSpread) / 2;
 
     // Inventory rebalancing skew
     const user = this.accountManager.getUser(this.id);
@@ -66,18 +69,18 @@ export class MarketMaker extends BaseTrader {
     let skew = 0;
     if (shares > 5500) {
       // Too much inventory: skew down to sell off
-      skew = -lastPrice * 0.002;
+      skew = -fairPrice * 0.002;
     } else if (shares < 4500) {
       // Low inventory: skew up to buy in
-      skew = lastPrice * 0.002;
+      skew = fairPrice * 0.002;
     }
 
     const levels = [1, 2, 3];
 
     for (const lvl of levels) {
       const levelMultiplier = lvl * 0.7;
-      const bidPrice = +(lastPrice + skew - halfSpread * levelMultiplier).toFixed(2);
-      const askPrice = +(lastPrice + skew + halfSpread * levelMultiplier).toFixed(2);
+      const bidPrice = +(fairPrice + skew - halfSpread * levelMultiplier).toFixed(2);
+      const askPrice = +(fairPrice + skew + halfSpread * levelMultiplier).toFixed(2);
 
       const qty = Math.floor(Math.random() * 25 + 10 * lvl);
 

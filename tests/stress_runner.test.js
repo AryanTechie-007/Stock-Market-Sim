@@ -9,7 +9,8 @@ const suites = [
   { name: 'v0.8 Developer SDKs (JS & Python)', cmd: 'node tests/sdk_client.test.js' },
   { name: 'v0.8 E2E Programmatic Bot Simulation', cmd: 'node tests/v08_e2e_simulation.js' },
   { name: 'v0.9 Frontend Modernization Suite', cmd: 'node tests/v09_frontend_modernization.test.js' },
-  { name: 'v0.904 User Authentication & Session Security', cmd: 'node tests/auth.test.js' }
+  { name: 'v0.904 User Authentication & Session Security', cmd: 'node tests/auth.test.js' },
+  { name: 'v0.905 Geometric Brownian Motion (GBM) Price Discovery', cmd: 'node tests/gbm.test.js' }
 ];
 
 const ROUNDS = parseInt(process.env.STRESS_ROUNDS || '5', 10);
