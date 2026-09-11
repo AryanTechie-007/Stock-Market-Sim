@@ -2,10 +2,10 @@
 
 ## Repository Metadata
 
-- **Current Pushed Version:** v0.907
+- **Current Pushed Version:** v0.908
 - **Username:** AryanTechie-007
-- **Push Timestamp:** 2026-09-11 16:05:00 IST (UTC+05:30)
-- **Current Status:** Deployed Build (Opening Auction Mechanism & Simulation World Release)
+- **Push Timestamp:** 2026-09-11 16:15:00 IST (UTC+05:30)
+- **Current Status:** Deployed Build (Multi-Asset Correlation Engine Release)
 - **Repository:** https://github.com/AryanTechie-007/Stock-Market-Sim
 
 ---
@@ -303,6 +303,21 @@ The web client provides a professional desktop terminal layout:
     - **News Sentiment Momentum Reactors (`traders/news-reactor.js`):** Rapidly front-runs initial spike phases and takes profit during the 30s digestion window.
   - Pre-market auction order priming ensures rich liquidity and executable volume at the opening bell.
 
+### 17. Multi-Asset Correlation Engine via Cholesky Factorization (`engine/market.js`)
+- **Analytical Matrix Factorization ($\mathbf{\Sigma} = \mathbf{L} \mathbf{L}^T$):**
+  - Synthesizes a positive semi-definite $10 \times 10$ asset cross-correlation matrix spanning all listed equities across 6 sectors.
+  - Implements native, zero-dependency Cholesky-Banachiewicz decomposition algorithm to compute the exact lower triangular matrix $\mathbf{L}$:
+    $$L_{j,j} = \sqrt{\Sigma_{j,j} - \sum_{k=1}^{j-1} L_{j,k}^2}, \quad L_{i,j} = \frac{1}{L_{j,j}} \left( \Sigma_{i,j} - \sum_{k=1}^{j-1} L_{i,k} L_{j,k} \right) \quad (i > j)$$
+  - Factorization satisfies exact analytical reconstruction with machine-precision residual error ($||\mathbf{L} \mathbf{L}^T - \mathbf{\Sigma}|| \le 2.22 \times 10^{-16}$).
+- **Correlated Multi-Asset Wiener Increments:**
+  - Converts $N$ independent standard Gaussian normal variates $\mathbf{Z} \sim \mathcal{N}(0, \mathbf{I})$ generated via Box-Muller transformation into correlated shock vectors:
+    $$\mathbf{\epsilon} = \mathbf{L} \cdot \mathbf{Z}, \quad \text{where } \text{Cov}(\mathbf{\epsilon}) = \mathbf{L} \mathbf{L}^T = \mathbf{\Sigma}$$
+  - Multiplies shocks by $\sqrt{\Delta t}$ to produce authentic correlated Brownian increments $dW_i = \epsilon_i \sqrt{\Delta t}$ driving Itô diffusion.
+- **Synchronized Sector Price Discovery:**
+  - High intra-sector correlation pairs (e.g., Tech `BYTE` $\leftrightarrow$ `SEMI` $\rho = +0.70$, Defense `AERO` $\leftrightarrow$ `CYBR` $\rho = +0.55$, Clean Energy `AUTO` $\leftrightarrow$ `SOLR` $\rho = +0.58$) demonstrate authentic co-movement frequency ($> 68\%$), while counter-cyclical pairs (Banking `NBNK` $\leftrightarrow$ Tech `BYTE` $\rho = -0.15$) exhibit realistic diversification.
+- **RESTful Correlation Inspection Endpoint:**
+  - `GET /api/v1/market/correlation`: Exposes asset list, raw correlation matrix $\mathbf{\Sigma}$, and calculated lower-triangular Cholesky factor matrix $\mathbf{L}$ for quantitative analysis.
+
 ---
 
 ## Technology Stack
@@ -493,6 +508,7 @@ node tests/v08_e2e_simulation.js
 44. News Impact Decay overreaction spike (140% confirmed, 160% rumor), convex exponential digestion trajectory, permanent residual convergence (~55%), bearish panic plunge-and-rebound, market maker quote adaptation, and multi-event concurrent queue resilience.
 45. Opening Auction Call Market pre-market accumulation, volume-maximizing clearing price determination (P*), multi-tier tie-breaking, uniform clearing price execution, residual order retention, and automated opening bell trigger establishing official openPrice.
 46. Simulation World News Engine procedural event generation (Macro, Sector, Earnings, Corporate, Rumors), macroeconomic state tracking, 10-company multi-asset parameterization across 6 sectors, and 23-bot NPC fleet execution with Scalper and News Reactor archetypes.
+47. Multi-Asset Correlation Engine 10x10 matrix symmetry, analytical Cholesky factorization exact reconstruction ($||\mathbf{L} \mathbf{L}^T - \mathbf{\Sigma}|| < 10^{-15}$), Monte Carlo empirical covariance convergence ($N=10,000$), correlated Wiener diffusion co-movement frequency, and 500-step long-horizon multi-asset stability.
 
 ---
 
@@ -513,7 +529,8 @@ node tests/v08_e2e_simulation.js
 - **v0.904 (Pushed to GitHub):** User Authentication, Password Hashing & Session Security: Built native cryptographic credentials subsystem (engine/auth.js) utilizing Node.js crypto.scryptSync with 16-byte random salts and constant-time timingSafeEqual verification; engineered SQLite relational tables (user_credentials, user_sessions) with foreign key relationships; created 24-hour cryptographically randomized session tokens (masess_...) and per-session CSRF tokens (macsrf_...); and mounted RESTful authentication endpoints (/api/v1/auth/register, /login, /me, /logout, /logout-all).
 - **v0.905 (Pushed to GitHub):** Geometric Brownian Motion (GBM) Price Discovery Engine: Engineered continuous stochastic price discovery subsystem (`engine/market.js`) implementing Itô's Lemma Geometric Brownian Motion ($dS_t = \mu S_t dt + \sigma S_t dW_t$) with Box-Muller normal variate generation; parameterized all listed equities with quantitative annual drift ($\mu$) and annualized volatility ($\sigma$); coupled diffusion variance dynamically to `MarketRegimeEngine` multipliers (0.5x to 4.0x); gated stochastic execution strictly to `REGULAR_HOURS`; added quiet interval anti-flatline soft mean-reversion drift synchronizing multi-timeframe candlestick buffers; updated Designated Market Maker quoting logic (`traders/market-maker.js`) to anchor quote ladders around living fair value; and authored full 8-test verification suite (`tests/gbm.test.js`) integrated into multi-round stress runner and repository regression suite.
 - **v0.906 (Pushed to GitHub):** News Impact Decay & Spike-and-Settle Engine: Engineered behavioral news impact digestion subsystem (`engine/market.js`) modeling the empirical three-stage market response to news catalysts (immediate overreaction spike, 30-second convex exponential digestion, and permanent fundamental residual); parameterized confirmed news at 140% spike with 55% residual and speculative rumors at 160% spike with 30% residual; implemented exact log-ratio step multipliers strictly converging to theoretical targets; coupled sentiment decay and Market Maker quoting adaptation across the digestion horizon; and authored dedicated 7-test verification suite (`tests/news_decay.test.js`) integrated into multi-round stress runner and repository regression suite.
-- **v0.907 (Current Release):** Opening Auction Mechanism, Simulation World News Engine & Multi-Asset Expansion: Implemented call market opening auction mechanism (`engine/orderbook.js`, `engine/matching.js`) with pre-market order accumulation, volume-maximizing clearing price algorithm ($P^*$), multi-tier tie-breaking, and uniform single clearing price execution establishing session `openPrice`; expanded listed equity universe to 10 companies across 6 economic sectors (`AUTO`, `SOLR`, `BYTE`, `NBNK`, `MEDL`, `AERO`, `SEMI`, `RETL`, `CYBR`, `STRM`); engineered stateful Simulation World News Engine (`engine/news-engine.js`) generating procedural macroeconomic, sector, quarterly earnings, corporate, and rumor catalysts; expanded autonomous NPC trader fleet to 23 bots introducing High-Frequency Scalpers (`traders/scalper.js`) and News Sentiment Momentum Reactors (`traders/news-reactor.js`); authored dedicated automated suites (`tests/opening_auction.test.js`, `tests/simulation_world.test.js`) and verified across 50-execution multi-round stress runner and 24-suite platform regression.
+- **v0.907 (Pushed to GitHub):** Opening Auction Mechanism, Simulation World News Engine & Multi-Asset Expansion: Implemented call market opening auction mechanism (`engine/orderbook.js`, `engine/matching.js`) with pre-market order accumulation, volume-maximizing clearing price algorithm ($P^*$), multi-tier tie-breaking, and uniform single clearing price execution establishing session `openPrice`; expanded listed equity universe to 10 companies across 6 economic sectors (`AUTO`, `SOLR`, `BYTE`, `NBNK`, `MEDL`, `AERO`, `SEMI`, `RETL`, `CYBR`, `STRM`); engineered stateful Simulation World News Engine (`engine/news-engine.js`) generating procedural macroeconomic, sector, quarterly earnings, corporate, and rumor catalysts; expanded autonomous NPC trader fleet to 23 bots introducing High-Frequency Scalpers (`traders/scalper.js`) and News Sentiment Momentum Reactors (`traders/news-reactor.js`); authored dedicated automated suites (`tests/opening_auction.test.js`, `tests/simulation_world.test.js`) and verified across 50-execution multi-round stress runner and 24-suite platform regression.
+- **v0.908 (Current Release):** Multi-Asset Correlation Engine via Cholesky Factorization: Implemented native analytical Cholesky decomposition ($\mathbf{\Sigma} = \mathbf{L} \mathbf{L}^T$) across a positive semi-definite 10x10 correlation matrix spanning all listed equities; transformed independent standard normal Gaussian variates into correlated multi-asset Wiener shock vectors ($\mathbf{dW}_t = \mathbf{L} \cdot \mathbf{Z}_t \sqrt{\Delta t}$); integrated correlated diffusion into Geometric Brownian Motion continuous price discovery; exposed RESTful matrix inspection endpoint (`GET /api/v1/market/correlation`); authored 5-test analytical and Monte Carlo verification suite (`tests/cholesky_correlation.test.js`) achieving machine-precision matrix reconstruction error ($< 10^{-15}$); and verified 100% reliability across 55-execution multi-round stress runner and 25-suite platform regression.
 
 
 

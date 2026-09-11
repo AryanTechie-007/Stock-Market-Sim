@@ -13,7 +13,8 @@ const suites = [
   { name: 'v0.905 Geometric Brownian Motion (GBM) Price Discovery', cmd: 'node tests/gbm.test.js' },
   { name: 'v0.906 News Impact Decay & Spike-and-Settle Engine', cmd: 'node tests/news_decay.test.js' },
   { name: 'v0.907 Opening Auction Mechanism & Call Market', cmd: 'node tests/opening_auction.test.js' },
-  { name: 'v0.907 Simulation World, Multi-Asset & NPC Fleet', cmd: 'node tests/simulation_world.test.js' }
+  { name: 'v0.907 Simulation World, Multi-Asset & NPC Fleet', cmd: 'node tests/simulation_world.test.js' },
+  { name: 'v0.908 Multi-Asset Correlation via Cholesky Factorization', cmd: 'node tests/cholesky_correlation.test.js' }
 ];
 
 const ROUNDS = parseInt(process.env.STRESS_ROUNDS || '5', 10);

@@ -128,6 +128,10 @@ app.get('/api/v1/world/state', (req, res) => {
   res.json(marketManager.simulationNews ? marketManager.simulationNews.getWorldState() : { status: 'idle' });
 });
 
+app.get('/api/v1/market/correlation', (req, res) => {
+  res.json(marketManager.getCorrelationMatrix());
+});
+
 app.get('/api/v1/orderbook/:symbol', (req, res) => {
   const symbol = (req.params.symbol || '').toUpperCase();
   const depth = parseInt(req.query.depth) || 10;

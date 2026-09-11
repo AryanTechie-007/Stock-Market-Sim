@@ -254,6 +254,23 @@ export const INITIAL_COMPANIES = [
   }
 ];
 
+export const ASSET_CORRELATION_SYMBOLS = [
+  'AUTO', 'SOLR', 'BYTE', 'NBNK', 'MEDL', 'AERO', 'SEMI', 'RETL', 'CYBR', 'STRM'
+];
+
+export const ASSET_CORRELATION_MATRIX = [
+  [1.00, 0.58, 0.22, 0.12, 0.15, 0.25, 0.35, 0.28, 0.20, 0.18],
+  [0.58, 1.00, 0.25,-0.10, 0.14, 0.20, 0.30, 0.22, 0.22, 0.15],
+  [0.22, 0.25, 1.00,-0.15, 0.12, 0.22, 0.70, 0.25, 0.62, 0.38],
+  [0.12,-0.10,-0.15, 1.00, 0.18, 0.20,-0.12, 0.18, 0.10, 0.08],
+  [0.15, 0.14, 0.12, 0.18, 1.00, 0.18, 0.15, 0.14, 0.16, 0.12],
+  [0.25, 0.20, 0.22, 0.20, 0.18, 1.00, 0.32, 0.18, 0.56, 0.15],
+  [0.35, 0.30, 0.70,-0.12, 0.15, 0.32, 1.00, 0.24, 0.55, 0.30],
+  [0.28, 0.22, 0.25, 0.18, 0.14, 0.18, 0.24, 1.00, 0.20, 0.45],
+  [0.20, 0.22, 0.62, 0.10, 0.16, 0.56, 0.55, 0.20, 1.00, 0.28],
+  [0.18, 0.15, 0.38, 0.08, 0.12, 0.15, 0.30, 0.45, 0.28, 1.00]
+];
+
 export const NEWS_EVENTS_POOL = [
   {
     headline: 'Government announces multi-billion solar subsidy & green grid modernization',
@@ -367,6 +384,11 @@ export class MarketManager extends EventEmitter {
     // News Impact Decay System (Spike-and-Settle Pattern)
     this.activeNewsDecays = [];
     this.newsDecayDurationSec = 30; // 30-second exponential digestion horizon
+
+    // Multi-Asset Cholesky Decomposition Correlation Engine
+    this.correlationSymbols = [...ASSET_CORRELATION_SYMBOLS];
+    this.correlationMatrix = ASSET_CORRELATION_MATRIX.map(r => [...r]);
+    this.choleskyMatrix = this._computeCholesky(this.correlationMatrix);
 
     // Dynamic Simulation World News Engine
     this.simulationNews = new SimulationWorldNewsEngine(this);
@@ -718,12 +740,15 @@ export class MarketManager extends EventEmitter {
     const nowSec = Math.floor(Date.now() / 1000);
     const priceUpdates = [];
 
+    // Generate correlated Wiener increments via Cholesky decomposition
+    const correlatedShocks = this.getCorrelatedShocks();
+
     for (const comp of this.companies.values()) {
       const annualReturn = comp.annualReturn ?? 0.08;
       const baseVol = comp.annualVolatility ?? (comp.volatility * Math.sqrt(252));
       const annualVol = baseVol * (this.regimeMultiplier || 1.0);
 
-      const z = this._randomNormal();
+      const z = correlatedShocks[comp.symbol] !== undefined ? correlatedShocks[comp.symbol] : this._randomNormal();
       const dW = z * sqrtDt;
 
       const drift = (annualReturn - 0.5 * annualVol * annualVol) * dt;
@@ -787,6 +812,78 @@ export class MarketManager extends EventEmitter {
    */
   stepGBM(dt = null) {
     this._tickGBM(dt);
+  }
+
+  /**
+   * Analytical Cholesky Factorization algorithm: Sigma = L * L^T
+   * Decomposes a symmetric positive-definite matrix into lower triangular factor L.
+   * @param {Array<Array<number>>} matrix
+   * @returns {Array<Array<number>>} Lower-triangular Cholesky factor L
+   */
+  _computeCholesky(matrix) {
+    const n = matrix.length;
+    const L = Array.from({ length: n }, () => new Array(n).fill(0));
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j <= i; j++) {
+        let s = 0;
+        for (let k = 0; k < j; k++) {
+          s += L[i][k] * L[j][k];
+        }
+        if (i === j) {
+          const val = matrix[i][i] - s;
+          L[i][j] = Math.sqrt(Math.max(0.000001, val));
+        } else {
+          L[i][j] = (matrix[i][j] - s) / L[j][j];
+        }
+      }
+    }
+    return L;
+  }
+
+  /**
+   * Generates a vector of correlated standard normal shocks across all listed equities
+   * eps = L * Z where Z ~ N(0, I) and Cov(eps) = Sigma
+   * @returns {Object} symbol -> shock value
+   */
+  getCorrelatedShocks() {
+    const n = this.correlationSymbols.length;
+    const z = [];
+    for (let i = 0; i < n; i++) {
+      z.push(this._randomNormal());
+    }
+    const eps = new Array(n).fill(0);
+    for (let i = 0; i < n; i++) {
+      let s = 0;
+      for (let j = 0; j <= i; j++) {
+        s += this.choleskyMatrix[i][j] * z[j];
+      }
+      eps[i] = s;
+    }
+    const shockMap = {};
+    for (let i = 0; i < n; i++) {
+      shockMap[this.correlationSymbols[i]] = eps[i];
+    }
+    return shockMap;
+  }
+
+  /**
+   * Query the underlying asset correlation matrix
+   */
+  getCorrelationMatrix() {
+    return {
+      symbols: [...this.correlationSymbols],
+      matrix: this.correlationMatrix.map(r => [...r])
+    };
+  }
+
+  /**
+   * Query the lower-triangular Cholesky factor matrix
+   */
+  getCholeskyMatrix() {
+    return {
+      symbols: [...this.correlationSymbols],
+      matrix: this.choleskyMatrix.map(r => [...r])
+    };
   }
 
   /**
