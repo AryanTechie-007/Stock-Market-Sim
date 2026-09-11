@@ -44,6 +44,38 @@ export class MarketMaker extends BaseTrader {
   }
 
   /**
+   * Estimates fair value without perfect knowledge of the hidden intrinsic value.
+   * Real market makers do not observe true intrinsic value; they infer value from order book
+   * microprice and noisy fundamental consensus.
+   * @param {string} symbol
+   * @param {Object} target
+   * @returns {number}
+   */
+  estimateFairValue(symbol, target) {
+    if (!target) return 100;
+    const book = this.matchingEngine ? this.matchingEngine.getOrderBook(symbol) : null;
+    const bestBid = book && book.bids && book.bids[0] ? book.bids[0].price : null;
+    const bestAsk = book && book.asks && book.asks[0] ? book.asks[0].price : null;
+    const bidQty = book && book.bids && book.bids[0] ? book.bids[0].quantity : 0;
+    const askQty = book && book.asks && book.asks[0] ? book.asks[0].quantity : 0;
+
+    let microprice = target.price;
+    if (bestBid && bestAsk && (bidQty + askQty) > 0) {
+      microprice = (bestAsk * bidQty + bestBid * askQty) / (bidQty + askQty);
+    }
+
+    // Noisy fundamental estimation: MMs have imperfect consensus rather than oracle access
+    const noise = (Math.random() - 0.5) * 0.008; // +/- 0.4% estimation dispersion
+    const noisyFundamental = (typeof target.intrinsicValue === 'number' && target.intrinsicValue > 0)
+      ? target.intrinsicValue * (1 + noise)
+      : target.price;
+
+    // Anchor: 40% to order book microprice / last traded price, 60% to noisy fundamental consensus
+    const marketAnchor = (bestBid && bestAsk) ? microprice : target.price;
+    return +(marketAnchor * 0.40 + noisyFundamental * 0.60).toFixed(2);
+  }
+
+  /**
    * Calculate reservation price and asymmetric quote spreads based on Order Book Imbalance (OBI)
    * and inventory risk (Avellaneda-Stoikov model).
    * @param {string} symbol
@@ -51,9 +83,7 @@ export class MarketMaker extends BaseTrader {
    */
   calculateReservationAndSpreads(symbol) {
     const target = this.marketManager.getCompany(symbol);
-    const fairPrice = (typeof target?.intrinsicValue === 'number' && target.intrinsicValue > 0)
-      ? +(target.price * 0.35 + target.intrinsicValue * 0.65).toFixed(2)
-      : (target?.price || 100);
+    const fairPrice = this.estimateFairValue(symbol, target);
 
     // Query Order Book Imbalance across top 5 depth levels
     const obiData = this.matchingEngine.getOrderBookImbalance(symbol, 5);

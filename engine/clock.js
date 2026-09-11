@@ -22,6 +22,14 @@ export class MarketClock extends EventEmitter {
     this.simulatedMinute = 570; // 09:30 AM in minutes
   }
 
+  setDurations({ preMarket, regularHours, postMarket } = {}) {
+    if (typeof preMarket === 'number' && preMarket > 0) this.durations.PRE_MARKET = preMarket;
+    if (typeof regularHours === 'number' && regularHours > 0) this.durations.REGULAR_HOURS = regularHours;
+    if (typeof postMarket === 'number' && postMarket > 0) this.durations.POST_MARKET = postMarket;
+    this.phaseRemainingSec = Math.min(this.phaseRemainingSec, this.durations[this.phase]);
+    this.emit('phaseChange', this.getState());
+  }
+
   start() {
     if (this.timer) clearInterval(this.timer);
     this.timer = setInterval(() => this._tick(), 1000);

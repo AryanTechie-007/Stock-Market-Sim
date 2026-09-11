@@ -2,10 +2,10 @@
 
 ## Repository Metadata
 
-- **Current Pushed Version:** v0.914
+- **Current Pushed Version:** v0.915
 - **Username:** AryanTechie-007
-- **Push Timestamp:** 2026-09-11 17:15:00 IST (UTC+05:30)
-- **Current Status:** Deployed Build (Pluggable Database Architecture & PostgreSQL Production Adapter Release)
+- **Push Timestamp:** 2026-09-11 19:45:00 IST (UTC+05:30)
+- **Current Status:** Deployed Build (Endogenous Price Discovery, GARCH(1,1) Stochastic Volatility & Merton Jump-Diffusion Release)
 - **Repository:** https://github.com/AryanTechie-007/Stock-Market-Sim
 
 ---
@@ -447,6 +447,31 @@ The web client provides a professional desktop terminal layout:
 - **RESTful Diagnostics Endpoint:**
   - `GET /api/v1/database/status`: Real-time inspection of active database adapter type and connection health.
 
+### 24. Endogenous Price Discovery, GARCH(1,1) Stochastic Volatility & Merton Jump-Diffusion (`engine/market.js`, `traders/market-maker.js`)
+- **Endogenous Order-Flow Price Discovery:**
+  - Decouples tradable price formation from exogenous stochastic processes; prices ($P_t$), candlestick bars, and high/low extremes emerge strictly from matched transactions in the continuous double-auction order book.
+  - Eliminates artificial price overwriting and quiet-period oracle pulls during active market phases.
+  - Retains fundamental valuation ($V_t$) as a slow-moving anchor providing gentle macroeconomic gravitation without overriding order flow dynamics.
+- **GARCH(1,1) Continuous Stochastic Volatility Clustering:**
+  - Implements generalized autoregressive conditional heteroskedasticity continuously updating instantaneous variance based on realized return innovations:
+    $$\sigma_t^2 = \omega + \alpha \cdot \epsilon_t^2 + \beta \cdot \sigma_{t-1}^2$$
+    where $\omega = V_L (1 - \alpha - \beta)$, $\alpha = 0.08$ (ARCH shock reaction), $\beta = 0.88$ (GARCH persistence), satisfying stationarity $\alpha + \beta < 1.0$.
+  - Generates empirical financial stylized facts: volatility clustering, memory persistence, and turbulent volatility regimes following unexpected market shocks.
+- **Merton Jump-Diffusion Process:**
+  - Augments continuous fundamental evolution with a compound Poisson jump process:
+    $$\frac{dV_t}{V_t} = (\mu - \lambda \kappa) dt + \sigma_t dW_t + J_t dN_t$$
+    where $N_t \sim \text{Poisson}(\lambda)$, $\ln(1 + J_t) \sim \mathcal{N}(\mu_J, \sigma_J^2)$, and $\kappa = \exp(\mu_J + 0.5 \sigma_J^2) - 1$.
+  - Injects discontinuous fat-tailed shocks generating excess kurtosis ($> 3.0$) and heavy tail distributions without relying on scripted news events.
+- **Crisis-Driven Dynamic Correlation Breakdown:**
+  - Implements stress-dependent correlation matrices transitioning towards $+1.0$ during market-wide drawdowns:
+    $$\rho_{ij}(t) = \min(0.98, \rho_{ij}^{(0)} + (1.0 - \rho_{ij}^{(0)}) \cdot s_t \cdot 0.75)$$
+    where $s_t \in [0.0, 1.0]$ represents systemic crisis stress.
+  - Dynamically recalculates the lower-triangular Cholesky factor $\mathbf{L}_t$, accurately capturing correlation breakdown and systemic contagion.
+- **Market Maker Noisy Fair-Value Estimation:**
+  - Removes oracle access to hidden intrinsic value; market makers quote around order book microprice blended with noisy fundamental estimates ($\tilde{V}_t = V_t \cdot (1 + \epsilon_{\text{est}})$), reflecting genuine institutional dealing desks.
+- **Configurable Session Clock:**
+  - Added dynamic session duration reconfiguration (`clock.setDurations`) allowing customizable trading session lengths (180s, 300s, 600s, 1200s) for empirical mean-reversion analysis.
+
 ---
 
 ## Technology Stack
@@ -669,6 +694,7 @@ node tests/v08_e2e_simulation.js
 51. Options Chains & Black-Scholes-Merton Derivatives Engine analytical Call/Put valuation, Abramowitz-Stegun standard normal CDF/PDF accuracy, exact Put-Call Parity verification ($C - P = S - K e^{-r T}$), first/second order Greeks ($\Delta, \Gamma, \mathcal{V}, \Theta, \rho$), Newton-Raphson/bisection implied volatility recovery, multi-expiration option chain generation, and RESTful derivatives endpoints.
 52. Dark Pool & Alternative Trading System (ATS) Midpoint Cross NBBO sampling, zero pre-trade market impact on lit books, exact midpoint matching, half-spread price improvement, Immediate-Or-Cancel (IOC) remainder cancellation, Minimum Execution Size (MES) constraint fulfillment, limit price boundary protection, dark order cancellation with complete capital/share refund, and RESTful ATS order management.
 53. Pluggable Database Architecture & PostgreSQL Production Adapter interface compliance, factory instantiation via DATABASE_TYPE environment variables, SQLiteAdapter CRUD persistence, PostgreSQL schema DDL generation, parameterized placeholder translation (? to $1, $2, ...), PostgreSQL relational unique constraint violation handling (23505), and RESTful database status reporting.
+54. Endogenous Price Discovery, GARCH(1,1) Stochastic Volatility & Merton Jump-Diffusion zero artificial price drift during quiet periods, order-flow-driven price formation strictly upon book matches, GARCH(1,1) dynamic volatility clustering ($\alpha=0.08, \beta=0.88$) and decay, Merton jump-diffusion Poisson arrival process ($\lambda=8.0, \mu_J=-0.015, \sigma_J=0.05$) with heavy-tailed kurtosis ($>3.0$), crisis-driven dynamic correlation breakdown and positive-definite Cholesky factorization, and Market Maker noisy fair-value microprice quotation without hidden oracle dependencies.
 
 ---
 
@@ -696,9 +722,5 @@ node tests/v08_e2e_simulation.js
 - **v0.911 (Pushed to GitHub):** Indicative Auction Call HUD & Simulation World Macro Bar: Integrated persistent Simulation World Macro Bar (`#macroBar`) directly beneath the news ticker displaying live policy rate, CPI inflation, real GDP growth, dynamic macro regime badge, and active stock OBI flow pressure & volume-weighted microprice; engineered Indicative Auction Call HUD (`#auctionCallHud`) positioned immediately above the depth ladder streaming live Indicative Equilibrium Price (IEP), Indicative Equilibrium Volume (IEV), imbalance surplus badge (`BUY SURPLUS`, `SELL SURPLUS`, `MATCHED`, `NO CROSS`), and session phase tags; integrated MOC and LOC order buttons into the trading pad; wired real-time WebSocket listeners (`auction:closingIndicative`, `world:macro`) and REST background synchronizers; authored comprehensive 5-test verification suite (`tests/terminal_auction_macro.test.js`); and verified 100% reliability across 70-execution multi-round stress runner and 28-suite platform regression.
 - **v0.912 (Pushed to GitHub):** Options Chains & Black-Scholes-Merton Derivatives Engine: Engineered analytical Black-Scholes European Call and Put derivatives valuation subsystem (`engine/options.js`) utilizing Abramowitz & Stegun rational normal distribution approximations; computed complete First and Second-Order Greeks suite ($\Delta, \Gamma, \mathcal{V}, \Theta, \rho$); built continuous Put-Call Parity validation; implemented numerical Implied Volatility solver via Newton-Raphson with bisection fallback; created OptionsChainManager generating dynamic multi-strike ladders across 4 standardized expiration cycles (7D, 14D, 30D, 60D) with theoretical quotes, spreads, open interest, and Greeks; mounted RESTful derivatives endpoints (`GET /api/v1/derivatives/options/:symbol`, `/api/v1/derivatives/options`, `/api/v1/derivatives/pricing`, `/api/v1/derivatives/implied-volatility`); authored comprehensive 7-test suite (`tests/options_derivatives.test.js`); and verified 100% reliability across 75-execution multi-round stress runner and 29-suite platform regression.
 - **v0.913 (Pushed to GitHub):** Dark Pool & Alternative Trading System (ATS) Midpoint Cross: Engineered institutional non-displayed liquidity venue (`engine/darkpool.js`) executing block orders at the National Best Bid and Offer (NBBO) midpoint with zero pre-trade market impact; implemented half-spread price improvement for buyers and sellers; supported Midpoint Peg, Immediate-or-Cancel (IOC_MIDPOINT), Limit Midpoint, and Minimum Execution Size (MES) order constraints; built post-trade consolidated tape reporting with venue flags (`DARK_POOL`), privacy-preserving aggregated non-displayed depth, and cumulative price improvement statistics; mounted RESTful ATS endpoints (`/api/v1/darkpool/nbbo/:symbol`, `/depth`, `/trades`, `/stats`, `/orders`); authored comprehensive 7-test suite (`tests/darkpool_ats.test.js`); and verified 100% reliability across 80-execution multi-round stress runner and 30-suite platform regression.
-- **v0.914 (Current Release):** Pluggable Database Architecture & PostgreSQL Production Adapter: Engineered modular persistence layer (`engine/database-adapter.js`) defining abstract `DatabaseAdapter` interface; built `SQLiteAdapter` for zero-dependency local execution and production-ready `PostgresAdapter` with full relational DDL migrations, connection pooling, and parameterized SQL translation; created dynamic database factory `createDatabaseAdapter()` auto-selecting adapters from `DATABASE_TYPE`; mounted RESTful database health endpoint (`/api/v1/database/status`); authored comprehensive 5-test unit suite (`tests/database_adapter.test.js`); and verified 100% reliability across 85-execution multi-round stress runner and 31-suite platform regression.
-
-
-
-
-
+- **v0.914 (Pushed to GitHub):** Pluggable Database Architecture & PostgreSQL Production Adapter: Engineered modular persistence layer (`engine/database-adapter.js`) defining abstract `DatabaseAdapter` interface; built `SQLiteAdapter` for zero-dependency local execution and production-ready `PostgresAdapter` with full relational DDL migrations, connection pooling, and parameterized SQL translation; created dynamic database factory `createDatabaseAdapter()` auto-selecting adapters from `DATABASE_TYPE`; mounted RESTful database health endpoint (`/api/v1/database/status`); authored comprehensive 5-test unit suite (`tests/database_adapter.test.js`); and verified 100% reliability across 85-execution multi-round stress runner and 31-suite platform regression.
+- **v0.915 (Current Release):** Endogenous Price Discovery, GARCH(1,1) Stochastic Volatility & Merton Jump-Diffusion: Decoupled tradable price formation from exogenous stochastic processes, ensuring prices and candlesticks emerge strictly from matched transactions; implemented GARCH(1,1) continuous volatility clustering ($\alpha=0.08, \beta=0.88$); layered compound Poisson Merton jump-diffusion process ($\lambda=8.0, \mu_J=-0.015, \sigma_J=0.05$) producing heavy-tailed return distributions (kurtosis $>3.0$); engineered crisis-driven dynamic correlation breakdown with positive-definite Cholesky factorization; updated Market Maker quoting to noisy microprice estimation removing hidden oracle dependencies; implemented configurable session clock durations; authored comprehensive 6-test unit suite (`tests/endogenous_price_garch.test.js`); and verified 100% reliability across 90-execution multi-round stress runner and 32-suite platform regression.

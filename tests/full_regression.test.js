@@ -1,9 +1,52 @@
 import assert from 'assert';
-import { execSync } from 'child_process';
+import { execSync, spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
 console.log('[TEST] Starting MarketArena Full Platform Regression Test Suite...\n');
+
+let serverProcess = null;
+let spawnedOurOwnServer = false;
+
+try {
+  const ping = await fetch('http://localhost:3000/api/v1/ping');
+  if (ping.ok) {
+    console.log('[INIT] Existing MarketArena server detected on port 3000.\n');
+  }
+} catch (e) {
+  console.log('[INIT] No active server detected on port 3000. Spawning test server daemon...');
+  serverProcess = spawn('node', ['server.js'], { stdio: 'pipe' });
+  spawnedOurOwnServer = true;
+
+  let ready = false;
+  for (let attempt = 1; attempt <= 35; attempt++) {
+    await new Promise(r => setTimeout(r, 200));
+    try {
+      const res = await fetch('http://localhost:3000/api/v1/ping');
+      if (res.ok) {
+        ready = true;
+        break;
+      }
+    } catch {}
+  }
+  if (!ready) {
+    console.warn('[WARN] Server did not report ready within 7s, proceeding anyway.');
+  } else {
+    console.log('[INIT] Test server daemon is ready on port 3000.\n');
+  }
+}
+
+function cleanupServer() {
+  if (spawnedOurOwnServer && serverProcess) {
+    try {
+      serverProcess.kill('SIGKILL');
+    } catch {}
+  }
+}
+
+process.on('exit', cleanupServer);
+process.on('SIGINT', () => { cleanupServer(); process.exit(1); });
+process.on('SIGTERM', () => { cleanupServer(); process.exit(1); });
 
 const testDir = 'tests';
 const testFiles = fs.readdirSync(testDir)

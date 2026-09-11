@@ -164,8 +164,10 @@ async function runTests() {
   }
   console.log('[PASS] Market Maker continuously anchors quote ladder to GBM fair price\n');
 
-  // Test 7: Quiet Period Continuous Price Drift & Candle Updates
-  console.log('Test 7: Quiet Period Soft Mean-Reversion Drift (Anti-Flatline Protection)');
+  // Test 7: Quiet Period Drift Mechanics (Soft Pull Toward Intrinsic Value)
+  console.log('Test 7: Quiet Period Drift Mechanics (Soft Pull Toward Intrinsic Value)');
+  marketManager.setEndogenousPricing(false);
+  marketManager.setSoftPullEnabled(true);
   const nbnk = marketManager.companies.get('NBNK');
   nbnk.price = 600.0;
   nbnk.intrinsicValue = 630.0; // Gap of 30 CR

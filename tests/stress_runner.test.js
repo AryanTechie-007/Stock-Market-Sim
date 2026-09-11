@@ -1,7 +1,50 @@
 import assert from 'assert';
-import { execSync } from 'child_process';
+import { execSync, spawn } from 'child_process';
 
 console.log('[TEST] Starting MarketArena Multi-Round Platform Stress Runner...\n');
+
+let serverProcess = null;
+let spawnedOurOwnServer = false;
+
+try {
+  const ping = await fetch('http://localhost:3000/api/v1/ping');
+  if (ping.ok) {
+    console.log('[INIT] Existing MarketArena server detected on port 3000.\n');
+  }
+} catch (e) {
+  console.log('[INIT] No active server detected on port 3000. Spawning test server daemon...');
+  serverProcess = spawn('node', ['server.js'], { stdio: 'pipe' });
+  spawnedOurOwnServer = true;
+
+  let ready = false;
+  for (let attempt = 1; attempt <= 35; attempt++) {
+    await new Promise(r => setTimeout(r, 200));
+    try {
+      const res = await fetch('http://localhost:3000/api/v1/ping');
+      if (res.ok) {
+        ready = true;
+        break;
+      }
+    } catch {}
+  }
+  if (!ready) {
+    console.warn('[WARN] Server did not report ready within 7s, proceeding anyway.');
+  } else {
+    console.log('[INIT] Test server daemon is ready on port 3000.\n');
+  }
+}
+
+function cleanupServer() {
+  if (spawnedOurOwnServer && serverProcess) {
+    try {
+      serverProcess.kill('SIGKILL');
+    } catch {}
+  }
+}
+
+process.on('exit', cleanupServer);
+process.on('SIGINT', () => { cleanupServer(); process.exit(1); });
+process.on('SIGTERM', () => { cleanupServer(); process.exit(1); });
 
 const suites = [
   { name: 'v0.8 API Security & Rate Limiting', cmd: 'node tests/api_security.test.js' },
@@ -20,7 +63,8 @@ const suites = [
   { name: 'v0.911 Indicative Auction Call HUD & Macro Bar', cmd: 'node tests/terminal_auction_macro.test.js' },
   { name: 'v0.912 Options Chains & Black-Scholes Derivatives', cmd: 'node tests/options_derivatives.test.js' },
   { name: 'v0.913 Dark Pool & ATS Midpoint Cross', cmd: 'node tests/darkpool_ats.test.js' },
-  { name: 'v0.914 Pluggable Database & PostgreSQL Adapter', cmd: 'node tests/database_adapter.test.js' }
+  { name: 'v0.914 Pluggable Database & PostgreSQL Adapter', cmd: 'node tests/database_adapter.test.js' },
+  { name: 'v0.915 Endogenous Price Discovery & GARCH(1,1)', cmd: 'node tests/endogenous_price_garch.test.js' }
 ];
 
 const ROUNDS = parseInt(process.env.STRESS_ROUNDS || '5', 10);

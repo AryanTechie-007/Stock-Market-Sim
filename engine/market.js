@@ -390,6 +390,13 @@ export class MarketManager extends EventEmitter {
     this.correlationMatrix = ASSET_CORRELATION_MATRIX.map(r => [...r]);
     this.choleskyMatrix = this._computeCholesky(this.correlationMatrix);
 
+    // Endogenous Pricing vs Exogenous Pull Engine
+    this.endogenousPricing = true; // Traded prices emerge strictly from order book matches
+    this.softPullEnabled = false;
+
+    // Dynamic systemic stress for crisis correlation breakdown (0.0 normal -> 1.0 extreme stress)
+    this.systemicStress = 0.0;
+
     // Dynamic Simulation World News Engine
     this.simulationNews = new SimulationWorldNewsEngine(this);
 
@@ -409,12 +416,33 @@ export class MarketManager extends EventEmitter {
     };
 
     for (const comp of INITIAL_COMPANIES) {
+      const baseVol = comp.annualVolatility ?? (comp.volatility * Math.sqrt(252));
+      const baseVariance = baseVol * baseVol;
+      const garchAlpha = 0.08;
+      const garchBeta = 0.88;
+      const garchOmega = baseVariance * (1.0 - garchAlpha - garchBeta);
+
       this.companies.set(comp.symbol, {
         ...comp,
         volume: 0,
         tradesCount: 0,
         lastTradeTimeSec: nowSec,
-        gbmHistory: { ticks: 0, cumulativeDrift: 1.0 }
+        gbmHistory: { ticks: 0, cumulativeDrift: 1.0 },
+        garch: {
+          omega: garchOmega,
+          alpha: garchAlpha,
+          beta: garchBeta,
+          variance: baseVariance,
+          currentVol: baseVol,
+          lastReturn: 0
+        },
+        mertonJumps: {
+          lambda: 8.0, // Expected 8 Poisson jumps per simulated year
+          muJ: -0.015, // Mean log-jump amplitude
+          sigmaJ: 0.05, // Jump volatility
+          jumpCount: 0,
+          lastJump: null
+        }
       });
 
       let latestClose = comp.basePrice;
@@ -640,6 +668,7 @@ export class MarketManager extends EventEmitter {
     const comp = this.companies.get(trade.symbol);
     if (!comp) return;
 
+    const oldPrice = comp.price;
     comp.lastTradeTimeSec = Math.floor(Date.now() / 1000);
     comp.price = trade.price;
     if (trade.isAuction || comp.tradesCount === 0) {
@@ -649,6 +678,22 @@ export class MarketManager extends EventEmitter {
     comp.tradesCount++;
     if (comp.highPrice === null || trade.price > comp.highPrice) comp.highPrice = trade.price;
     if (comp.lowPrice === null || trade.price < comp.lowPrice) comp.lowPrice = trade.price;
+
+    // GARCH(1,1) dynamic volatility clustering update upon trade execution
+    if (oldPrice > 0 && trade.price > 0 && oldPrice !== trade.price && comp.garch) {
+      const logReturn = Math.log(trade.price / oldPrice);
+      const sqShock = logReturn * logReturn;
+      // Annualize shock scaling for GARCH recurrence
+      const scaledShock = sqShock * 252;
+      comp.garch.variance = Math.max(
+        0.0001,
+        comp.garch.omega + comp.garch.alpha * scaledShock + comp.garch.beta * comp.garch.variance
+      );
+      comp.garch.currentVol = Math.sqrt(comp.garch.variance);
+      comp.garch.lastReturn = logReturn;
+      comp.annualVolatility = +(comp.garch.currentVol).toFixed(4);
+      comp.volatility = +(comp.garch.currentVol / Math.sqrt(252)).toFixed(4);
+    }
 
     // Update active candles across all timeframe resolutions
     for (const tf of this.timeframes) {
@@ -724,6 +769,78 @@ export class MarketManager extends EventEmitter {
 
   setRegimeMultiplier(multiplier) {
     this.regimeMultiplier = typeof multiplier === 'number' && multiplier > 0 ? multiplier : 1.0;
+    if (this.regimeMultiplier >= 2.0) {
+      this.setSystemicStress(Math.min(1.0, (this.regimeMultiplier - 1.0) / 2.0));
+    } else {
+      this.setSystemicStress(0.0);
+    }
+  }
+
+  setSystemicStress(stress) {
+    this.systemicStress = Math.max(0.0, Math.min(1.0, Number(stress) || 0));
+    this._updateDynamicCorrelation();
+  }
+
+  getSystemicStress() {
+    return this.systemicStress;
+  }
+
+  _updateDynamicCorrelation() {
+    const s = this.systemicStress;
+    const n = this.correlationSymbols.length;
+    const base = ASSET_CORRELATION_MATRIX;
+    const updated = Array.from({ length: n }, () => new Array(n).fill(0));
+
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) {
+        if (i === j) {
+          updated[i][j] = 1.0;
+        } else {
+          const rho0 = base[i][j];
+          // As systemic stress increases toward 1.0, correlations break down and surge toward +1.0
+          const stressedRho = Math.min(0.98, Math.max(-0.98, rho0 + (1.0 - rho0) * s * 0.75));
+          updated[i][j] = +stressedRho.toFixed(4);
+        }
+      }
+    }
+    this.correlationMatrix = updated;
+    this.choleskyMatrix = this._computeCholesky(this.correlationMatrix);
+  }
+
+  setEndogenousPricing(enabled) {
+    this.endogenousPricing = Boolean(enabled);
+  }
+
+  isEndogenousPricing() {
+    return this.endogenousPricing;
+  }
+
+  setSoftPullEnabled(enabled) {
+    this.softPullEnabled = Boolean(enabled);
+  }
+
+  getGarchVolatility(symbol) {
+    const comp = this.companies.get(symbol);
+    return comp?.garch ? { ...comp.garch } : null;
+  }
+
+  triggerMertonJump(symbol, customMagnitude = null) {
+    const comp = this.companies.get(symbol);
+    if (!comp) return null;
+    const magnitude = typeof customMagnitude === 'number'
+      ? customMagnitude
+      : Math.exp(comp.mertonJumps.muJ + comp.mertonJumps.sigmaJ * this._randomNormal()) - 1.0;
+
+    comp.intrinsicValue = +(comp.intrinsicValue * (1.0 + magnitude)).toFixed(2);
+    if (comp.intrinsicValue < 1.00) comp.intrinsicValue = 1.00;
+    if (comp.mertonJumps) {
+      comp.mertonJumps.jumpCount = (comp.mertonJumps.jumpCount || 0) + 1;
+      comp.mertonJumps.lastJump = {
+        time: Math.floor(Date.now() / 1000),
+        magnitude: +magnitude.toFixed(4)
+      };
+    }
+    return { symbol, magnitude, newIntrinsic: comp.intrinsicValue };
   }
 
   /**
@@ -745,9 +862,9 @@ export class MarketManager extends EventEmitter {
   }
 
   /**
-   * Continuous Geometric Brownian Motion (GBM) price discovery tick
-   * S(t + dt) = S(t) * exp((mu - 0.5 * sigma^2) * dt + sigma * dW)
-   * where dW = Z * sqrt(dt), Z ~ N(0, 1)
+   * Continuous Geometric Brownian Motion (GBM) + Merton Jump-Diffusion + GARCH Volatility tick
+   * S(t + dt) = S(t) * exp((mu - lambda*kappa - 0.5 * sigma_t^2) * dt + sigma_t * dW + J * dN)
+   * where dW = Z * sqrt(dt), Z ~ N(0, 1), N ~ Poisson(lambda)
    */
   _tickGBM(customDt = null) {
     if (!this.gbmEnabled) return;
@@ -764,15 +881,38 @@ export class MarketManager extends EventEmitter {
 
     for (const comp of this.companies.values()) {
       const annualReturn = comp.annualReturn ?? 0.08;
-      const baseVol = comp.annualVolatility ?? (comp.volatility * Math.sqrt(252));
+      // Use dynamic GARCH volatility if tracked, otherwise static base volatility
+      const baseVol = comp.garch ? comp.garch.currentVol : (comp.annualVolatility ?? (comp.volatility * Math.sqrt(252)));
       const annualVol = baseVol * (this.regimeMultiplier || 1.0);
 
       const z = correlatedShocks[comp.symbol] !== undefined ? correlatedShocks[comp.symbol] : this._randomNormal();
       const dW = z * sqrtDt;
 
-      const drift = (annualReturn - 0.5 * annualVol * annualVol) * dt;
+      // Merton Jump-Diffusion compound Poisson process
+      let jumpMultiplier = 1.0;
+      let jumpCompensator = 0;
+      if (comp.mertonJumps) {
+        const { lambda, muJ, sigmaJ } = comp.mertonJumps;
+        const kappa = Math.exp(muJ + 0.5 * sigmaJ * sigmaJ) - 1.0;
+        jumpCompensator = lambda * kappa * dt;
+
+        // Poisson arrival probability in interval dt
+        const pJump = 1.0 - Math.exp(-lambda * dt);
+        if (Math.random() < pJump) {
+          const zJump = this._randomNormal();
+          const J = Math.exp(muJ + sigmaJ * zJump) - 1.0;
+          jumpMultiplier = 1.0 + J;
+          comp.mertonJumps.jumpCount = (comp.mertonJumps.jumpCount || 0) + 1;
+          comp.mertonJumps.lastJump = {
+            time: nowSec,
+            magnitude: +J.toFixed(4)
+          };
+        }
+      }
+
+      const drift = (annualReturn - jumpCompensator - 0.5 * annualVol * annualVol) * dt;
       const diffusion = annualVol * dW;
-      const gbmMultiplier = Math.exp(drift + diffusion);
+      const gbmMultiplier = Math.exp(drift + diffusion) * jumpMultiplier;
 
       comp.intrinsicValue = +(comp.intrinsicValue * gbmMultiplier).toFixed(2);
       if (comp.intrinsicValue < 1.00) comp.intrinsicValue = 1.00;
@@ -783,37 +923,41 @@ export class MarketManager extends EventEmitter {
       comp.gbmHistory.ticks++;
       comp.gbmHistory.cumulativeDrift *= gbmMultiplier;
 
-      // Soft mean-reversion drift during quiet trading intervals (>= 3s without a trade fill)
-      const secondsSinceTrade = nowSec - (comp.lastTradeTimeSec || nowSec);
-      if (secondsSinceTrade >= 3) {
-        const gap = comp.intrinsicValue - comp.price;
-        const softPull = +(gap * 0.05).toFixed(2);
-        if (Math.abs(softPull) >= 0.01) {
-          comp.price = +(comp.price + softPull).toFixed(2);
-          if (comp.highPrice === null || comp.price > comp.highPrice) comp.highPrice = comp.price;
-          if (comp.lowPrice === null || comp.price < comp.lowPrice) comp.lowPrice = comp.price;
+      // In Endogenous Pricing mode (default), traded price comp.price is NEVER updated by _tickGBM.
+      // Soft mean-reversion drift during quiet trading intervals is strictly legacy and requires
+      // endogenous pricing disabled AND soft pull explicitly enabled.
+      if (!this.endogenousPricing && this.softPullEnabled) {
+        const secondsSinceTrade = nowSec - (comp.lastTradeTimeSec || nowSec);
+        if (secondsSinceTrade >= 3) {
+          const gap = comp.intrinsicValue - comp.price;
+          const softPull = +(gap * 0.05).toFixed(2);
+          if (Math.abs(softPull) >= 0.01) {
+            comp.price = +(comp.price + softPull).toFixed(2);
+            if (comp.highPrice === null || comp.price > comp.highPrice) comp.highPrice = comp.price;
+            if (comp.lowPrice === null || comp.price < comp.lowPrice) comp.lowPrice = comp.price;
 
-          for (const tf of this.timeframes) {
-            const tfActiveMap = this.activeCandles.get(tf);
-            if (tfActiveMap) {
-              const activeCandle = tfActiveMap.get(comp.symbol);
-              if (activeCandle) {
-                activeCandle.close = comp.price;
-                activeCandle.high = Math.max(activeCandle.high, comp.price);
-                activeCandle.low = Math.min(activeCandle.low, comp.price);
+            for (const tf of this.timeframes) {
+              const tfActiveMap = this.activeCandles.get(tf);
+              if (tfActiveMap) {
+                const activeCandle = tfActiveMap.get(comp.symbol);
+                if (activeCandle) {
+                  activeCandle.close = comp.price;
+                  activeCandle.high = Math.max(activeCandle.high, comp.price);
+                  activeCandle.low = Math.min(activeCandle.low, comp.price);
+                }
               }
             }
-          }
 
-          priceUpdates.push({
-            symbol: comp.symbol,
-            price: comp.price,
-            change: +(comp.price - comp.previousClose).toFixed(2),
-            changePercent: +(((comp.price - comp.previousClose) / comp.previousClose) * 100).toFixed(2),
-            high: comp.highPrice,
-            low: comp.lowPrice,
-            volume: comp.volume
-          });
+            priceUpdates.push({
+              symbol: comp.symbol,
+              price: comp.price,
+              change: +(comp.price - comp.previousClose).toFixed(2),
+              changePercent: +(((comp.price - comp.previousClose) / comp.previousClose) * 100).toFixed(2),
+              high: comp.highPrice,
+              low: comp.lowPrice,
+              volume: comp.volume
+            });
+          }
         }
       }
     }
