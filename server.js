@@ -124,6 +124,19 @@ app.get('/api/v1/auction', (req, res) => {
   res.json(matchingEngine.getAllIndicativeOpenings(prices));
 });
 
+app.get('/api/v1/auction/closing/:symbol', (req, res) => {
+  const symbol = (req.params.symbol || '').toUpperCase();
+  const comp = marketManager.getCompany(symbol);
+  const data = matchingEngine.getIndicativeClosing(symbol, comp?.price);
+  if (!data) return res.status(404).json({ error: 'Symbol not found' });
+  res.json(data);
+});
+
+app.get('/api/v1/auction/closing', (req, res) => {
+  const prices = marketManager.getCurrentPrices();
+  res.json(matchingEngine.getAllIndicativeClosings(prices));
+});
+
 app.get('/api/v1/world/state', (req, res) => {
   res.json(marketManager.simulationNews ? marketManager.simulationNews.getWorldState() : { status: 'idle' });
 });

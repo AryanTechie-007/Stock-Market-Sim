@@ -9,6 +9,11 @@ import { OrderBook } from './orderbook.js';
 export class MatchingEngine extends EventEmitter {
   constructor(symbols, accountManager, clock) {
     super();
+    if (symbols && !Array.isArray(symbols) && typeof symbols.getUser === 'function') {
+      clock = accountManager;
+      accountManager = symbols;
+      symbols = null;
+    }
     this.accountManager = accountManager;
     this.clock = clock;
     this.books = new Map(); // symbol -> OrderBook
@@ -25,6 +30,8 @@ export class MatchingEngine extends EventEmitter {
       this.clock.on('bellRing', ({ bell }) => {
         if (bell === 'OPENING_BELL') {
           this.executeAllOpeningAuctions();
+        } else if (bell === 'CLOSING_BELL') {
+          this.executeAllClosingAuctions();
         }
       });
     }
@@ -68,9 +75,9 @@ export class MatchingEngine extends EventEmitter {
   submitOrder(rawOrder) {
     const { userId, userName, symbol, side, type, price, quantity, stopPrice, trailingDelta, leverage, isShort, ocoGroupId } = rawOrder;
 
-    if (!this.clock.isTradingOpen()) {
-      // In Pre-market, allow limit orders and resting stop orders
-      if (this.clock.phase !== 'PRE_MARKET' || (type !== 'LIMIT' && type !== 'STOP_LOSS' && type !== 'STOP_LIMIT' && type !== 'TRAILING_STOP')) {
+    if (this.clock && !this.clock.isTradingOpen()) {
+      // In Pre-market, allow limit orders, resting stop orders, and closing auction orders
+      if (this.clock.phase !== 'PRE_MARKET' || (type !== 'LIMIT' && type !== 'STOP_LOSS' && type !== 'STOP_LIMIT' && type !== 'TRAILING_STOP' && type !== 'MOC' && type !== 'LOC')) {
         return {
           success: false,
           error: `Market is currently ${this.clock.phase.replace('_', ' ')}. Trading opens during regular hours.`
@@ -93,7 +100,7 @@ export class MatchingEngine extends EventEmitter {
     const cleanStopPrice = stopPrice !== undefined && stopPrice !== null ? +(Number(stopPrice).toFixed(2)) : 0;
     const cleanTrailingDelta = trailingDelta !== undefined && trailingDelta !== null ? +(Number(trailingDelta).toFixed(2)) : 5.0;
 
-    if ((type === 'LIMIT' || type === 'STOP_LIMIT') && (isNaN(cleanPrice) || cleanPrice <= 0)) {
+    if ((type === 'LIMIT' || type === 'STOP_LIMIT' || type === 'LOC') && (isNaN(cleanPrice) || cleanPrice <= 0)) {
       return { success: false, error: 'Valid limit price is required' };
     }
 
@@ -123,6 +130,10 @@ export class MatchingEngine extends EventEmitter {
         estimatedPrice = cleanPrice;
       } else if (type === 'TRAILING_STOP') {
         estimatedPrice = (currentMidPrice + cleanTrailingDelta) * 1.05;
+      } else if (type === 'MOC') {
+        estimatedPrice = currentMidPrice * 1.05;
+      } else if (type === 'LOC') {
+        estimatedPrice = cleanPrice;
       }
 
       if (!this.accountManager.canAffordBuy(userId, estimatedPrice, cleanQty, cleanLeverage)) {
@@ -238,6 +249,38 @@ export class MatchingEngine extends EventEmitter {
       this.emit('stopOrderPlaced', order);
       this.emit('orderbookChange', { symbol, depth: book.getDepth(10) });
       return { success: true, order, isStop: true };
+    } else if (type === 'MOC') {
+      if (side === 'BUY') {
+        const estPrice = currentMidPrice * 1.05;
+        const marginLock = +((estPrice * cleanQty) / cleanLeverage).toFixed(2);
+        this.accountManager.lockCredits(userId, marginLock);
+      } else if (!orderIsShort) {
+        this.accountManager.lockShares(userId, symbol, cleanQty);
+      } else {
+        const estPrice = currentMidPrice * 1.05;
+        const marginLock = +((estPrice * cleanQty) / cleanLeverage).toFixed(2);
+        this.accountManager.lockCredits(userId, marginLock);
+      }
+      book.addClosingOrder(order);
+      this.emit('closingOrderPlaced', order);
+      const indicative = book.calculateClosingAuctionPrice(currentMidPrice);
+      this.emit('auction:closingIndicative', { symbol, ...indicative });
+      return { success: true, order, isClosingAuction: true };
+    } else if (type === 'LOC') {
+      if (side === 'BUY') {
+        const marginLock = +((cleanPrice * cleanQty) / cleanLeverage).toFixed(2);
+        this.accountManager.lockCredits(userId, marginLock);
+      } else if (!orderIsShort) {
+        this.accountManager.lockShares(userId, symbol, cleanQty);
+      } else {
+        const marginLock = +((cleanPrice * cleanQty) / cleanLeverage).toFixed(2);
+        this.accountManager.lockCredits(userId, marginLock);
+      }
+      book.addClosingOrder(order);
+      this.emit('closingOrderPlaced', order);
+      const indicative = book.calculateClosingAuctionPrice(currentMidPrice);
+      this.emit('auction:closingIndicative', { symbol, ...indicative });
+      return { success: true, order, isClosingAuction: true };
     }
 
     // Process matching for standard LIMIT or MARKET order
@@ -496,17 +539,20 @@ export class MatchingEngine extends EventEmitter {
     if (cancelled) {
       // Unlock remaining reserved capital/shares
       if (cancelled.side === 'BUY') {
-        if (cancelled.type === 'STOP_LOSS' || cancelled.type === 'TRAILING_STOP') {
-          const lockedAmount = +(cancelled.stopPrice * 1.05 * cancelled.quantity).toFixed(2);
+        if (cancelled.type === 'STOP_LOSS' || cancelled.type === 'TRAILING_STOP' || cancelled.type === 'MOC') {
+          const ref = cancelled.stopPrice || cancelled.currentMarketPrice || 100;
+          const lockedAmount = +((ref * 1.05 * cancelled.quantity) / (cancelled.leverage || 1)).toFixed(2);
           this.accountManager.unlockCredits(userId, lockedAmount);
         } else {
-          this.accountManager.unlockCredits(userId, (cancelled.price || cancelled.stopPrice || 0) * cancelled.quantity);
+          const lockedAmount = +(((cancelled.price || cancelled.stopPrice || 0) * cancelled.quantity) / (cancelled.leverage || 1)).toFixed(2);
+          this.accountManager.unlockCredits(userId, lockedAmount);
         }
       } else {
         if (!cancelled.isShort) {
           this.accountManager.unlockShares(userId, symbol, cancelled.quantity);
         } else {
-          const lockedAmount = +(cancelled.stopPrice * 1.05 * cancelled.quantity).toFixed(2);
+          const ref = cancelled.stopPrice || cancelled.price || cancelled.currentMarketPrice || 100;
+          const lockedAmount = +((ref * 1.05 * cancelled.quantity) / (cancelled.leverage || 1)).toFixed(2);
           this.accountManager.unlockCredits(userId, lockedAmount);
         }
       }
@@ -592,6 +638,86 @@ export class MatchingEngine extends EventEmitter {
   }
 
   /**
+   * Query Indicative Closing Price and Volume for a symbol
+   */
+  getIndicativeClosing(symbol, referencePrice = null) {
+    const book = this.books.get(symbol);
+    if (!book) return null;
+    return {
+      symbol,
+      ...book.calculateClosingAuctionPrice(referencePrice)
+    };
+  }
+
+  /**
+   * Query Indicative Closing data across all symbols
+   */
+  getAllIndicativeClosings(referencePrices = {}) {
+    const reports = {};
+    for (const [symbol, book] of this.books.entries()) {
+      reports[symbol] = book.calculateClosingAuctionPrice(referencePrices[symbol] || null);
+    }
+    return reports;
+  }
+
+  /**
+   * Execute Closing Call Auction across all symbols at the Closing Bell
+   * Matches all eligible MOC, LOC, and crossing limit orders at uniform single clearing price
+   */
+  executeAllClosingAuctions(referencePrices = {}) {
+    const results = {};
+    for (const [symbol, book] of this.books.entries()) {
+      const ref = referencePrices[symbol] || null;
+      results[symbol] = this.executeClosingAuction(symbol, ref);
+    }
+    this.emit('closingAuction:allCleared', results);
+    return results;
+  }
+
+  /**
+   * Execute Closing Call Auction for a specific symbol
+   */
+  executeClosingAuction(symbol, referencePrice = null) {
+    const book = this.books.get(symbol);
+    if (!book) return null;
+
+    const auctionResult = book.executeClosingAuction(referencePrice);
+    const { trades, clearingPrice, clearingVolume, expiredOrders } = auctionResult;
+
+    for (const trade of trades) {
+      this.accountManager.settleTrade(trade, true, true);
+      this.emit('trade', trade);
+    }
+
+    for (const expired of expiredOrders) {
+      if (expired.side === 'BUY' || expired.isShort) {
+        const refPrice = expired.type === 'LOC' ? expired.price : (expired.currentMarketPrice || clearingPrice || 100);
+        const lockedAmount = +((refPrice * (expired.type === 'MOC' ? 1.05 : 1.0) * expired.quantity) / (expired.leverage || 1)).toFixed(2);
+        this.accountManager.unlockCredits(expired.userId, lockedAmount);
+      } else {
+        this.accountManager.unlockShares(expired.userId, symbol, expired.quantity);
+      }
+      this.emit('orderExpired', expired);
+    }
+
+    if (trades.length > 0) {
+      this.emit('orderbookChange', { symbol, depth: book.getDepth(10) });
+    }
+
+    const report = {
+      symbol,
+      clearingPrice,
+      clearingVolume,
+      tradesCount: trades.length,
+      expiredCount: expiredOrders.length,
+      timestamp: Date.now()
+    };
+
+    this.emit('closingAuction:cleared', report);
+    return report;
+  }
+
+  /**
    * Query Order Book Imbalance (OBI) for a specific symbol
    * @param {string} symbol
    * @param {number} [depthLevels=5]
@@ -616,4 +742,5 @@ export class MatchingEngine extends EventEmitter {
     return reports;
   }
 }
+
 

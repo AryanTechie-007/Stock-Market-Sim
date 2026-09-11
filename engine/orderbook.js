@@ -8,6 +8,7 @@ export class OrderBook {
     this.asks = []; // Sell orders: sorted price ASC, timestamp ASC
     this.orders = new Map(); // orderId -> order
     this.stopOrders = new Map(); // orderId -> resting stop order
+    this.closingOrders = new Map(); // orderId -> MOC or LOC order
   }
 
   /**
@@ -298,6 +299,8 @@ export class OrderBook {
 
     if (this.stopOrders.has(orderId)) {
       this.stopOrders.delete(orderId);
+    } else if (this.closingOrders && this.closingOrders.has(orderId)) {
+      this.closingOrders.delete(orderId);
     } else if (order.side === 'BUY') {
       const idx = this.bids.findIndex(o => o.id === orderId);
       if (idx !== -1) this.bids.splice(idx, 1);
@@ -671,5 +674,320 @@ export class OrderBook {
       clearingVolume: clearingVolume - remainingVolumeToMatch
     };
   }
+
+  /**
+   * Add a Market-On-Close (MOC) or Limit-On-Close (LOC) order
+   * @param {Object} order
+   * @returns {Object}
+   */
+  addClosingOrder(order) {
+    order.quantity = Math.max(0, Math.floor(order.quantity));
+    order.originalQuantity = order.quantity;
+    order.filledQuantity = 0;
+    order.timestamp = order.timestamp || Date.now();
+    order.status = 'CLOSING_RESTING';
+
+    if (order.type === 'MOC') {
+      order.price = order.side === 'BUY' ? Infinity : 0;
+    }
+
+    this.closingOrders.set(order.id, order);
+    this.orders.set(order.id, order);
+    return order;
+  }
+
+  /**
+   * Calculate Indicative Equilibrium Price (IEP) and Indicative Equilibrium Volume (IEV)
+   * for the Closing Call Auction.
+   * Considers continuous resting limit orders + MOC + eligible LOC orders.
+   * @param {number} [referencePrice]
+   * @returns {{ clearingPrice: number|null, clearingVolume: number, imbalance: number, imbalanceSide: string }}
+   */
+  calculateClosingAuctionPrice(referencePrice = null) {
+    const candidatePriceSet = new Set();
+    if (referencePrice && referencePrice > 0) {
+      candidatePriceSet.add(referencePrice);
+    }
+
+    for (const b of this.bids) {
+      if (b.price > 0) candidatePriceSet.add(b.price);
+    }
+    for (const a of this.asks) {
+      if (a.price > 0) candidatePriceSet.add(a.price);
+    }
+    for (const c of this.closingOrders.values()) {
+      if (c.type === 'LOC' && c.price > 0) {
+        candidatePriceSet.add(c.price);
+      }
+    }
+
+    if (candidatePriceSet.size === 0) {
+      const bestBid = this.getBestBid();
+      const bestAsk = this.getBestAsk();
+      const defaultRef = bestBid && bestAsk ? +((bestBid + bestAsk) / 2).toFixed(2) : (bestBid || bestAsk || null);
+      return {
+        clearingPrice: defaultRef,
+        clearingVolume: 0,
+        imbalance: 0,
+        imbalanceSide: 'NONE'
+      };
+    }
+
+    const candidatePrices = Array.from(candidatePriceSet).sort((a, b) => a - b);
+    let maxVolume = 0;
+    const evaluations = [];
+
+    for (const p of candidatePrices) {
+      let buyQty = 0;
+      // 1. Resting Limit Bids >= p
+      for (const b of this.bids) {
+        if (b.price >= p) buyQty += b.quantity;
+      }
+      // 2. Closing Buy Orders (MOC buys at any price, LOC buys if price >= p)
+      for (const c of this.closingOrders.values()) {
+        if (c.side === 'BUY') {
+          if (c.type === 'MOC' || (c.type === 'LOC' && c.price >= p)) {
+            buyQty += c.quantity;
+          }
+        }
+      }
+
+      let sellQty = 0;
+      // 1. Resting Limit Asks <= p
+      for (const a of this.asks) {
+        if (a.price <= p) sellQty += a.quantity;
+      }
+      // 2. Closing Sell Orders (MOC sells at any price, LOC sells if price <= p)
+      for (const c of this.closingOrders.values()) {
+        if (c.side === 'SELL') {
+          if (c.type === 'MOC' || (c.type === 'LOC' && c.price <= p)) {
+            sellQty += c.quantity;
+          }
+        }
+      }
+
+      const execVolume = Math.min(buyQty, sellQty);
+      const imbalance = Math.abs(buyQty - sellQty);
+      const side = buyQty > sellQty ? 'BUY' : sellQty > buyQty ? 'SELL' : 'NEUTRAL';
+
+      if (execVolume > maxVolume) {
+        maxVolume = execVolume;
+      }
+
+      evaluations.push({
+        price: p,
+        executableVolume: execVolume,
+        imbalance,
+        buyQty,
+        sellQty,
+        imbalanceSide: side
+      });
+    }
+
+    if (maxVolume === 0) {
+      return {
+        clearingPrice: referencePrice || candidatePrices[0] || null,
+        clearingVolume: 0,
+        imbalance: 0,
+        imbalanceSide: 'NONE'
+      };
+    }
+
+    // Step 1: Filter candidates with maximum executable volume
+    let bestCandidates = evaluations.filter(e => e.executableVolume === maxVolume);
+
+    // Step 2: Tie-break by minimum volume imbalance
+    if (bestCandidates.length > 1) {
+      const minImbalance = Math.min(...bestCandidates.map(e => e.imbalance));
+      bestCandidates = bestCandidates.filter(e => e.imbalance === minImbalance);
+    }
+
+    // Step 3: Tie-break by minimizing distance to reference price
+    let chosen = bestCandidates[0];
+    if (bestCandidates.length > 1 && referencePrice) {
+      let minDistance = Infinity;
+      for (const cand of bestCandidates) {
+        const dist = Math.abs(cand.price - referencePrice);
+        if (dist < minDistance) {
+          minDistance = dist;
+          chosen = cand;
+        }
+      }
+    } else if (bestCandidates.length > 1) {
+      const mid = (bestCandidates[0].price + bestCandidates[bestCandidates.length - 1].price) / 2;
+      chosen = bestCandidates.reduce((prev, curr) => Math.abs(curr.price - mid) < Math.abs(prev.price - mid) ? curr : prev);
+    }
+
+    return {
+      clearingPrice: chosen.price,
+      clearingVolume: chosen.executableVolume,
+      imbalance: chosen.imbalance,
+      imbalanceSide: chosen.imbalanceSide
+    };
+  }
+
+  /**
+   * Execute Closing Call Auction Uncrossing
+   * Matches eligible orders at uniform clearing price, expires unfilled MOC/LOC orders
+   * @param {number} [referencePrice]
+   * @returns {{ trades: Array, clearingPrice: number, clearingVolume: number, expiredOrders: Array }}
+   */
+  executeClosingAuction(referencePrice = null) {
+    const clearing = this.calculateClosingAuctionPrice(referencePrice);
+    const { clearingPrice, clearingVolume } = clearing;
+    const trades = [];
+    const expiredOrders = [];
+
+    if (!clearingPrice || clearingVolume <= 0) {
+      // No trades execute, all MOC/LOC orders expire
+      for (const order of this.closingOrders.values()) {
+        order.status = 'EXPIRED';
+        this.orders.delete(order.id);
+        expiredOrders.push(order);
+      }
+      this.closingOrders.clear();
+      return {
+        trades: [],
+        clearingPrice: referencePrice || clearingPrice,
+        clearingVolume: 0,
+        expiredOrders
+      };
+    }
+
+    // Collect eligible buyers:
+    // 1. MOC Buys (highest priority, sorted by timestamp)
+    // 2. Limit / LOC Buys where price >= clearingPrice (sorted by price DESC, timestamp ASC)
+    const eligibleBuys = [];
+    for (const c of this.closingOrders.values()) {
+      if (c.side === 'BUY') {
+        if (c.type === 'MOC' || (c.type === 'LOC' && c.price >= clearingPrice)) {
+          eligibleBuys.push(c);
+        }
+      }
+    }
+    for (const b of this.bids) {
+      if (b.price >= clearingPrice) {
+        eligibleBuys.push(b);
+      }
+    }
+    eligibleBuys.sort((a, b) => {
+      const aIsMoc = a.type === 'MOC';
+      const bIsMoc = b.type === 'MOC';
+      if (aIsMoc && !bIsMoc) return -1;
+      if (!aIsMoc && bIsMoc) return 1;
+      if (b.price !== a.price) return b.price - a.price;
+      return a.timestamp - b.timestamp;
+    });
+
+    // Collect eligible sellers:
+    // 1. MOC Sells (highest priority, sorted by timestamp)
+    // 2. Limit / LOC Sells where price <= clearingPrice (sorted by price ASC, timestamp ASC)
+    const eligibleSells = [];
+    for (const c of this.closingOrders.values()) {
+      if (c.side === 'SELL') {
+        if (c.type === 'MOC' || (c.type === 'LOC' && c.price <= clearingPrice)) {
+          eligibleSells.push(c);
+        }
+      }
+    }
+    for (const a of this.asks) {
+      if (a.price <= clearingPrice) {
+        eligibleSells.push(a);
+      }
+    }
+    eligibleSells.sort((a, b) => {
+      const aIsMoc = a.type === 'MOC';
+      const bIsMoc = b.type === 'MOC';
+      if (aIsMoc && !bIsMoc) return -1;
+      if (!aIsMoc && bIsMoc) return 1;
+      if (a.price !== b.price) return a.price - b.price;
+      return a.timestamp - b.timestamp;
+    });
+
+    let remainingVolumeToMatch = clearingVolume;
+    let bIdx = 0;
+    let sIdx = 0;
+
+    while (remainingVolumeToMatch > 0 && bIdx < eligibleBuys.length && sIdx < eligibleSells.length) {
+      const topBuy = eligibleBuys[bIdx];
+      const topSell = eligibleSells[sIdx];
+
+      if (topBuy.userId === topSell.userId) {
+        sIdx++;
+        continue;
+      }
+
+      const matchQty = Math.min(topBuy.quantity, topSell.quantity, remainingVolumeToMatch);
+      if (matchQty <= 0) break;
+
+      topBuy.quantity -= matchQty;
+      topBuy.filledQuantity += matchQty;
+      topSell.quantity -= matchQty;
+      topSell.filledQuantity += matchQty;
+      remainingVolumeToMatch -= matchQty;
+
+      const trade = {
+        id: `close_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        symbol: this.symbol,
+        price: clearingPrice,
+        quantity: matchQty,
+        buyerId: topBuy.userId,
+        buyerName: topBuy.userName,
+        sellerId: topSell.userId,
+        sellerName: topSell.userName,
+        takerSide: 'CLOSING_AUCTION',
+        isAuction: true,
+        isClosingAuction: true,
+        makerOrderId: topSell.id,
+        takerOrderId: topBuy.id,
+        buyerLeverage: topBuy.leverage || 1,
+        sellerLeverage: topSell.leverage || 1,
+        buyerIsShort: Boolean(topBuy.isShort),
+        sellerIsShort: Boolean(topSell.isShort),
+        timestamp: Date.now()
+      };
+      trades.push(trade);
+
+      if (topBuy.quantity === 0) {
+        topBuy.status = 'FILLED';
+        this.orders.delete(topBuy.id);
+        this.closingOrders.delete(topBuy.id);
+        const bidIdx = this.bids.findIndex(o => o.id === topBuy.id);
+        if (bidIdx !== -1) this.bids.splice(bidIdx, 1);
+        bIdx++;
+      } else {
+        topBuy.status = 'PARTIALLY_FILLED';
+      }
+
+      if (topSell.quantity === 0) {
+        topSell.status = 'FILLED';
+        this.orders.delete(topSell.id);
+        this.closingOrders.delete(topSell.id);
+        const askIdx = this.asks.findIndex(o => o.id === topSell.id);
+        if (askIdx !== -1) this.asks.splice(askIdx, 1);
+        sIdx++;
+      } else {
+        topSell.status = 'PARTIALLY_FILLED';
+      }
+    }
+
+    // Expire any remaining unexecuted / partially executed MOC and LOC orders
+    for (const [orderId, order] of this.closingOrders.entries()) {
+      if (order.quantity > 0) {
+        order.status = 'EXPIRED';
+        expiredOrders.push(order);
+      }
+      this.orders.delete(orderId);
+    }
+    this.closingOrders.clear();
+
+    return {
+      trades,
+      clearingPrice,
+      clearingVolume: clearingVolume - remainingVolumeToMatch,
+      expiredOrders
+    };
+  }
 }
+
 

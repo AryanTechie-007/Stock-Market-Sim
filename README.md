@@ -2,10 +2,10 @@
 
 ## Repository Metadata
 
-- **Current Pushed Version:** v0.909
+- **Current Pushed Version:** v0.910
 - **Username:** AryanTechie-007
-- **Push Timestamp:** 2026-09-11 16:25:00 IST (UTC+05:30)
-- **Current Status:** Deployed Build (Order Book Imbalance & Adverse Selection Release)
+- **Push Timestamp:** 2026-09-11 16:35:00 IST (UTC+05:30)
+- **Current Status:** Deployed Build (Closing Call Auction & MOC/LOC Orders Release)
 - **Repository:** https://github.com/AryanTechie-007/Stock-Market-Sim
 
 ---
@@ -337,6 +337,22 @@ The web client provides a professional desktop terminal layout:
   - `GET /api/v1/market/imbalance/:symbol`: Real-time OBI, bid/ask depth volumes, and microprice.
   - `GET /api/v1/market/imbalance`: Market-wide imbalance state across all listed equities.
 
+### 19. Closing Call Auction & Market-On-Close (MOC) / Limit-On-Close (LOC) Orders (`engine/orderbook.js`, `engine/matching.js`)
+- **Closing Cross Call Market Mechanism:**
+  - Automated call market uncrossing at the 04:00 PM `CLOSING_BELL` determining the single equilibrium clearing price $P^*_{\text{close}}$ that maximizes executable volume.
+  - Resolves late-session liquidity imbalances and establishes the official `closePrice` for each listed company, inherited as `previousClose` on next-day rollover.
+- **Market-On-Close (MOC) Priority Matching:**
+  - Unconditional market orders executing strictly at the official closing clearing price.
+  - Evaluated in cumulative schedules with infinite demand/supply priority over resting limit orders.
+- **Limit-On-Close (LOC) Conditional Boundary Execution:**
+  - Conditional limit orders executing strictly at the closing cross if and only if clearing price satisfies limit conditions (Buy: $P^*_{\text{close}} \le P_{\text{limit}}$; Sell: $P^*_{\text{close}} \ge P_{\text{limit}}$).
+- **Automated Expiration & Collateral Protection:**
+  - All unfilled or partially unfilled MOC and LOC orders expire automatically with status `'EXPIRED'`.
+  - Reserved capital and locked collateral shares are instantly unlocked and restored to trader accounts with zero capital leakage.
+- **RESTful Closing Auction Endpoints:**
+  - `GET /api/v1/auction/closing/:symbol`: Query Indicative Equilibrium Price and Volume for symbol close.
+  - `GET /api/v1/auction/closing`: Market-wide closing cross indicative report across all listed instruments.
+
 ---
 
 ## Technology Stack
@@ -529,6 +545,7 @@ node tests/v08_e2e_simulation.js
 46. Simulation World News Engine procedural event generation (Macro, Sector, Earnings, Corporate, Rumors), macroeconomic state tracking, 10-company multi-asset parameterization across 6 sectors, and 23-bot NPC fleet execution with Scalper and News Reactor archetypes.
 47. Multi-Asset Correlation Engine 10x10 matrix symmetry, analytical Cholesky factorization exact reconstruction ($||\mathbf{L} \mathbf{L}^T - \mathbf{\Sigma}|| < 10^{-15}$), Monte Carlo empirical covariance convergence ($N=10,000$), correlated Wiener diffusion co-movement frequency, and 500-step long-horizon multi-asset stability.
 48. Order Book Imbalance (OBI) mathematical boundary conditions ([-1.0, +1.0]), top-K depth windowing, volume-weighted microprice leading indicator, market maker adverse selection quote adaptation, and Avellaneda-Stoikov inventory rebalancing.
+49. Closing Call Auction volume-maximizing clearing price determination (P*), MOC execution priority, LOC boundary condition filtering, uniform single clearing price execution, automatic expiration of unfilled closing orders with collateral refund, and CLOSING_BELL official closePrice establishment.
 
 ---
 
@@ -551,7 +568,8 @@ node tests/v08_e2e_simulation.js
 - **v0.906 (Pushed to GitHub):** News Impact Decay & Spike-and-Settle Engine: Engineered behavioral news impact digestion subsystem (`engine/market.js`) modeling the empirical three-stage market response to news catalysts (immediate overreaction spike, 30-second convex exponential digestion, and permanent fundamental residual); parameterized confirmed news at 140% spike with 55% residual and speculative rumors at 160% spike with 30% residual; implemented exact log-ratio step multipliers strictly converging to theoretical targets; coupled sentiment decay and Market Maker quoting adaptation across the digestion horizon; and authored dedicated 7-test verification suite (`tests/news_decay.test.js`) integrated into multi-round stress runner and repository regression suite.
 - **v0.907 (Pushed to GitHub):** Opening Auction Mechanism, Simulation World News Engine & Multi-Asset Expansion: Implemented call market opening auction mechanism (`engine/orderbook.js`, `engine/matching.js`) with pre-market order accumulation, volume-maximizing clearing price algorithm ($P^*$), multi-tier tie-breaking, and uniform single clearing price execution establishing session `openPrice`; expanded listed equity universe to 10 companies across 6 economic sectors (`AUTO`, `SOLR`, `BYTE`, `NBNK`, `MEDL`, `AERO`, `SEMI`, `RETL`, `CYBR`, `STRM`); engineered stateful Simulation World News Engine (`engine/news-engine.js`) generating procedural macroeconomic, sector, quarterly earnings, corporate, and rumor catalysts; expanded autonomous NPC trader fleet to 23 bots introducing High-Frequency Scalpers (`traders/scalper.js`) and News Sentiment Momentum Reactors (`traders/news-reactor.js`); authored dedicated automated suites (`tests/opening_auction.test.js`, `tests/simulation_world.test.js`) and verified across 50-execution multi-round stress runner and 24-suite platform regression.
 - **v0.908 (Pushed to GitHub):** Multi-Asset Correlation Engine via Cholesky Factorization: Implemented native analytical Cholesky decomposition ($\mathbf{\Sigma} = \mathbf{L} \mathbf{L}^T$) across a positive semi-definite 10x10 correlation matrix spanning all listed equities; transformed independent standard normal Gaussian variates into correlated multi-asset Wiener shock vectors ($\mathbf{dW}_t = \mathbf{L} \cdot \mathbf{Z}_t \sqrt{\Delta t}$); integrated correlated diffusion into Geometric Brownian Motion continuous price discovery; exposed RESTful matrix inspection endpoint (`GET /api/v1/market/correlation`); authored 5-test analytical and Monte Carlo verification suite (`tests/cholesky_correlation.test.js`) achieving machine-precision matrix reconstruction error ($< 10^{-15}$); and verified 100% reliability across 55-execution multi-round stress runner and 25-suite platform regression.
-- **v0.909 (Current Release):** Order Book Imbalance (OBI) Signals & Adverse Selection Quoting: Engineered Level 2 order book imbalance metrics ($OBI = \frac{V_{\text{bid}} - V_{\text{ask}}}{V_{\text{bid}} + V_{\text{ask}}} \in [-1.0, 1.0]$) and volume-weighted microprice leading indicators (`engine/orderbook.js`, `engine/matching.js`); integrated Avellaneda-Stoikov reservation price calculation and asymmetric spread protection into Market Maker quoting algorithms (`traders/market-maker.js`), expanding quote spreads against adverse flow by up to 2.2x and reducing quote exposure; mounted RESTful imbalance endpoints (`GET /api/v1/market/imbalance/:symbol`, `GET /api/v1/market/imbalance`); authored comprehensive 5-test unit suite (`tests/obi_signals.test.js`); and verified 100% reliability across 60-execution multi-round stress runner and 26-suite platform regression.
+- **v0.909 (Pushed to GitHub):** Order Book Imbalance (OBI) Signals & Adverse Selection Quoting: Engineered Level 2 order book imbalance metrics ($OBI = \frac{V_{\text{bid}} - V_{\text{ask}}}{V_{\text{bid}} + V_{\text{ask}}} \in [-1.0, 1.0]$) and volume-weighted microprice leading indicators (`engine/orderbook.js`, `engine/matching.js`); integrated Avellaneda-Stoikov reservation price calculation and asymmetric spread protection into Market Maker quoting algorithms (`traders/market-maker.js`), expanding quote spreads against adverse flow by up to 2.2x and reducing quote exposure; mounted RESTful imbalance endpoints (`GET /api/v1/market/imbalance/:symbol`, `GET /api/v1/market/imbalance`); authored comprehensive 5-test unit suite (`tests/obi_signals.test.js`); and verified 100% reliability across 60-execution multi-round stress runner and 26-suite platform regression.
+- **v0.910 (Current Release):** Closing Call Auction & Market-On-Close (MOC) / Limit-On-Close (LOC) Orders: Engineered institutional Closing Cross mechanism (`engine/orderbook.js`, `engine/matching.js`) executing at the 04:00 PM `CLOSING_BELL` at single uniform clearing price $P^*_{\text{close}}$ maximizing executable volume; added Market-On-Close (MOC) orders with infinite demand/supply priority and Limit-On-Close (LOC) orders with price boundary execution ($P^* \le P_{\text{limit}}$ for buy, $P^* \ge P_{\text{limit}}$ for sell); implemented automated post-cross order expiration and collateral refund with zero capital leakage; bound `CLOSING_BELL` clock lifecycle event to establish official session `closePrice` inherited by `previousClose` on new day rollover; mounted RESTful endpoints (`GET /api/v1/auction/closing/:symbol`, `GET /api/v1/auction/closing`); authored comprehensive 5-test suite (`tests/closing_auction.test.js`); and verified 100% reliability across 65-execution multi-round stress runner and 27-suite platform regression.
 
 
 

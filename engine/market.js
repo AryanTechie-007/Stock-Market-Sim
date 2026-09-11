@@ -489,22 +489,41 @@ export class MarketManager extends EventEmitter {
         });
         this._startNewsGenerator();
       } else if (bell === 'CLOSING_BELL') {
+        // Execute Closing Call Auction across all symbols
+        const prices = this.getCurrentPrices();
+        const results = this.matchingEngine ? this.matchingEngine.executeAllClosingAuctions(prices) : {};
+
+        if (results) {
+          for (const [sym, res] of Object.entries(results)) {
+            const comp = this.companies.get(sym);
+            if (comp) {
+              if (res && res.clearingPrice) {
+                comp.price = res.clearingPrice;
+                comp.closePrice = res.clearingPrice;
+              } else {
+                comp.closePrice = comp.price;
+              }
+            }
+          }
+        }
+
         this.emit('news', {
           id: `news_${Date.now()}`,
-          headline: `CLOSING BELL — Trading session for Day ${day} has closed. Order matching halted for settlement.`,
+          headline: `CLOSING BELL — Trading session for Day ${day} has closed. Closing auction cross complete.`,
           symbols: Array.from(this.companies.keys()),
           sentiment: 'NEUTRAL',
           isRumor: false,
           timestamp: Date.now()
         });
         this._stopNewsGenerator();
+        this.emit('companiesUpdate', this.getAllCompanies());
       }
     });
 
     this.clock.on('newDay', ({ day }) => {
-      // Set previousClose to current price for new day
+      // Set previousClose to closing price for new day
       for (const comp of this.companies.values()) {
-        comp.previousClose = comp.price;
+        comp.previousClose = comp.closePrice || comp.price;
         comp.openPrice = comp.price;
         comp.highPrice = comp.price;
         comp.lowPrice = comp.price;
