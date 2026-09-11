@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events';
+import { SimulationWorldNewsEngine } from './news-engine.js';
 
 export const INITIAL_COMPANIES = [
   {
@@ -125,6 +126,131 @@ export const INITIAL_COMPANIES = [
       dividendYield: '1.5%'
     },
     description: 'Clinical-stage pharmaceutical leader developing targeted immuno-therapeutics and precision genomics.'
+  },
+  {
+    symbol: 'AERO',
+    name: 'AeroDynamics Inc.',
+    mark: 'AE',
+    sector: 'Aerospace · Defense',
+    basePrice: 740,
+    price: 740,
+    openPrice: 740,
+    highPrice: 740,
+    lowPrice: 740,
+    previousClose: 740,
+    intrinsicValue: 740,
+    sentiment: 0.05,
+    volatility: 0.016,
+    annualReturn: 0.11, // 11.0% annual expected return (defense procurement drift)
+    annualVolatility: 0.2540, // 25.40% annualized volatility (0.016 * sqrt(252))
+    fundamentals: {
+      marketCap: '74.0B',
+      peRatio: 19.8,
+      profitMargin: '11.5%',
+      revenueGrowth: '+14.2%',
+      dividendYield: '1.8%'
+    },
+    description: 'Defense prime contractor developing autonomous avionics, hypersonics, and next-generation orbital satellite networks.'
+  },
+  {
+    symbol: 'SEMI',
+    name: 'NovaSilicon Technologies',
+    mark: 'NS',
+    sector: 'Semiconductors · Hardware',
+    basePrice: 960,
+    price: 960,
+    openPrice: 960,
+    highPrice: 960,
+    lowPrice: 960,
+    previousClose: 960,
+    intrinsicValue: 960,
+    sentiment: 0.15,
+    volatility: 0.024,
+    annualReturn: 0.17, // 17.0% annual expected return (AI semiconductor foundry drift)
+    annualVolatility: 0.3810, // 38.10% annualized volatility (0.024 * sqrt(252))
+    fundamentals: {
+      marketCap: '96.0B',
+      peRatio: 31.4,
+      profitMargin: '29.1%',
+      revenueGrowth: '+38.5%',
+      dividendYield: '0.5%'
+    },
+    description: 'Global semiconductor powerhouse fabricating 2nm extreme-ultraviolet (EUV) microprocessors and specialized AI accelerators.'
+  },
+  {
+    symbol: 'RETL',
+    name: 'OmniRetail Global',
+    mark: 'OR',
+    sector: 'Retail · E-Commerce',
+    basePrice: 310,
+    price: 310,
+    openPrice: 310,
+    highPrice: 310,
+    lowPrice: 310,
+    previousClose: 310,
+    intrinsicValue: 310,
+    sentiment: 0,
+    volatility: 0.014,
+    annualReturn: 0.07, // 7.0% annual expected return (consumer staple growth drift)
+    annualVolatility: 0.2222, // 22.22% annualized volatility (0.014 * sqrt(252))
+    fundamentals: {
+      marketCap: '31.0B',
+      peRatio: 14.8,
+      profitMargin: '6.4%',
+      revenueGrowth: '+9.1%',
+      dividendYield: '2.8%'
+    },
+    description: 'Omnichannel consumer retail network with automated fulfillment centers, direct-to-consumer logistics, and subscription services.'
+  },
+  {
+    symbol: 'CYBR',
+    name: 'CipherShield Security',
+    mark: 'CS',
+    sector: 'Cybersecurity · GovTech',
+    basePrice: 530,
+    price: 530,
+    openPrice: 530,
+    highPrice: 530,
+    lowPrice: 530,
+    previousClose: 530,
+    intrinsicValue: 530,
+    sentiment: 0.1,
+    volatility: 0.021,
+    annualReturn: 0.15, // 15.0% annual expected return (zero-trust enterprise drift)
+    annualVolatility: 0.3334, // 33.34% annualized volatility (0.021 * sqrt(252))
+    fundamentals: {
+      marketCap: '53.0B',
+      peRatio: 36.5,
+      profitMargin: '21.0%',
+      revenueGrowth: '+27.4%',
+      dividendYield: '0.2%'
+    },
+    description: 'Zero-trust enterprise cybersecurity suite safeguarding critical infrastructure, cloud pipelines, and federal intelligence datacenters.'
+  },
+  {
+    symbol: 'STRM',
+    name: 'StreamPulse Entertainment',
+    mark: 'SP',
+    sector: 'Digital Media · Streaming',
+    basePrice: 195,
+    price: 195,
+    openPrice: 195,
+    highPrice: 195,
+    lowPrice: 195,
+    previousClose: 195,
+    intrinsicValue: 195,
+    sentiment: -0.05,
+    volatility: 0.026,
+    annualReturn: 0.12, // 12.0% annual expected return (streaming subscriber drift)
+    annualVolatility: 0.4127, // 41.27% annualized volatility (0.026 * sqrt(252))
+    fundamentals: {
+      marketCap: '19.5B',
+      peRatio: 24.2,
+      profitMargin: '12.3%',
+      revenueGrowth: '+19.6%',
+      dividendYield: '0.0%'
+    },
+    description: 'Next-generation streaming media and interactive entertainment platform with 180M global active subscribers.'
   }
 ];
 
@@ -241,6 +367,9 @@ export class MarketManager extends EventEmitter {
     // News Impact Decay System (Spike-and-Settle Pattern)
     this.activeNewsDecays = [];
     this.newsDecayDurationSec = 30; // 30-second exponential digestion horizon
+
+    // Dynamic Simulation World News Engine
+    this.simulationNews = new SimulationWorldNewsEngine(this);
 
     this._initializeCompanies();
     this._bindEngineEvents();
@@ -395,6 +524,11 @@ export class MarketManager extends EventEmitter {
   }
 
   triggerRandomEvent() {
+    // Interleave procedural simulation world events with foundational event pool
+    if (this.simulationNews && Math.random() < 0.60) {
+      const worldEvent = this.simulationNews.generateWorldEvent();
+      return this.triggerNewsEvent(worldEvent);
+    }
     const eventTemplate = NEWS_EVENTS_POOL[Math.floor(Math.random() * NEWS_EVENTS_POOL.length)];
     return this.triggerNewsEvent(eventTemplate);
   }
@@ -467,6 +601,9 @@ export class MarketManager extends EventEmitter {
 
     comp.lastTradeTimeSec = Math.floor(Date.now() / 1000);
     comp.price = trade.price;
+    if (trade.isAuction || comp.tradesCount === 0) {
+      comp.openPrice = trade.price;
+    }
     comp.volume += trade.quantity;
     comp.tradesCount++;
     if (comp.highPrice === null || trade.price > comp.highPrice) comp.highPrice = trade.price;

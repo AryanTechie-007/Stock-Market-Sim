@@ -7,7 +7,7 @@ import { fileURLToPath } from 'url';
 import { MarketClock } from './engine/clock.js';
 import { AccountManager } from './engine/accounts.js';
 import { MatchingEngine } from './engine/matching.js';
-import { MarketManager } from './engine/market.js';
+import { MarketManager, INITIAL_COMPANIES } from './engine/market.js';
 import { NPCManager } from './traders/manager.js';
 import { SQLiteStorageManager } from './engine/sqlite-storage.js';
 import { TournamentManager } from './engine/tournament.js';
@@ -35,7 +35,7 @@ const clock = new MarketClock({
   preMarketDurationSec: 20   // 20s pre-market
 });
 const accountManager = new AccountManager(100000, storageManager); // 100,000 Credits
-const symbols = ['AUTO', 'SOLR', 'BYTE', 'NBNK', 'MEDL'];
+const symbols = INITIAL_COMPANIES.map(c => c.symbol);
 const matchingEngine = new MatchingEngine(symbols, accountManager, clock);
 const marketManager = new MarketManager(clock, matchingEngine);
 const regimeEngine = new MarketRegimeEngine(clock);
@@ -66,6 +66,14 @@ tournamentManager.on('stateChange', (state) => {
 });
 tournamentManager.on('tournamentConcluded', (podium) => {
   io.emit('tournament:concluded', podium);
+});
+
+// Wire opening auction events
+matchingEngine.on('auction:indicative', (data) => {
+  io.emit('auction:indicative', data);
+});
+matchingEngine.on('auction:cleared', (report) => {
+  io.emit('auction:cleared', report);
 });
 
 // Static frontend
@@ -100,6 +108,24 @@ app.get('/api/v1/ping', (req, res) => {
 
 app.get('/api/v1/regime', (req, res) => {
   res.json(regimeEngine.getRegime());
+});
+
+// --- Opening Auction & Simulation World Data ---
+app.get('/api/v1/auction/:symbol', (req, res) => {
+  const symbol = (req.params.symbol || '').toUpperCase();
+  const comp = marketManager.getCompany(symbol);
+  const data = matchingEngine.getIndicativeOpening(symbol, comp?.previousClose);
+  if (!data) return res.status(404).json({ error: 'Symbol not found' });
+  res.json(data);
+});
+
+app.get('/api/v1/auction', (req, res) => {
+  const prices = marketManager.getCurrentPrices();
+  res.json(matchingEngine.getAllIndicativeOpenings(prices));
+});
+
+app.get('/api/v1/world/state', (req, res) => {
+  res.json(marketManager.simulationNews ? marketManager.simulationNews.getWorldState() : { status: 'idle' });
 });
 
 app.get('/api/v1/orderbook/:symbol', (req, res) => {

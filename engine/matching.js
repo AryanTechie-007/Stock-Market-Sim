@@ -9,13 +9,24 @@ import { OrderBook } from './orderbook.js';
 export class MatchingEngine extends EventEmitter {
   constructor(symbols, accountManager, clock) {
     super();
-    this.symbols = symbols;
     this.accountManager = accountManager;
     this.clock = clock;
     this.books = new Map(); // symbol -> OrderBook
 
-    for (const sym of symbols) {
+    const defaultSymbols = ['AUTO', 'SOLR', 'BYTE', 'NBNK', 'MEDL', 'AERO', 'SEMI', 'RETL', 'CYBR', 'STRM'];
+    const symbolList = (symbols && symbols.length > 0) ? symbols : defaultSymbols;
+    this.symbols = Array.from(new Set([...symbolList, ...defaultSymbols]));
+
+    for (const sym of this.symbols) {
       this.books.set(sym, new OrderBook(sym));
+    }
+
+    if (this.clock) {
+      this.clock.on('bellRing', ({ bell }) => {
+        if (bell === 'OPENING_BELL') {
+          this.executeAllOpeningAuctions();
+        }
+      });
     }
   }
 
@@ -173,6 +184,15 @@ export class MatchingEngine extends EventEmitter {
       } else {
         const marginLock = +((cleanPrice * cleanQty) / cleanLeverage).toFixed(2);
         this.accountManager.lockCredits(userId, marginLock);
+      }
+
+      // In Pre-market, queue limit orders for the Opening Call Auction without continuous matching
+      if (this.clock && this.clock.phase === 'PRE_MARKET') {
+        book.addPreMarketLimitOrder(order);
+        this.emit('orderbookChange', { symbol, depth: book.getDepth(10) });
+        const indicative = book.calculateIndicativeClearingPrice();
+        this.emit('auction:indicative', { symbol, ...indicative });
+        return { success: true, order, isPreMarket: true };
       }
     } else if (type === 'STOP_LIMIT') {
       if (side === 'BUY') {
@@ -500,5 +520,74 @@ export class MatchingEngine extends EventEmitter {
     }
 
     return { success: false, error: 'Failed to cancel order' };
+  }
+
+  /**
+   * Query Indicative Equilibrium Price and Volume for a symbol
+   */
+  getIndicativeOpening(symbol, referencePrice = null) {
+    const book = this.books.get(symbol);
+    if (!book) return null;
+    return {
+      symbol,
+      ...book.calculateIndicativeClearingPrice(referencePrice)
+    };
+  }
+
+  /**
+   * Query Indicative Opening data across all symbols
+   */
+  getAllIndicativeOpenings(referencePrices = {}) {
+    const reports = {};
+    for (const [symbol, book] of this.books.entries()) {
+      reports[symbol] = book.calculateIndicativeClearingPrice(referencePrices[symbol] || null);
+    }
+    return reports;
+  }
+
+  /**
+   * Execute Opening Auction across all symbols at the Opening Bell
+   * Matches all crossing orders at uniform single clearing price P*
+   */
+  executeAllOpeningAuctions(referencePrices = {}) {
+    const results = {};
+    for (const [symbol, book] of this.books.entries()) {
+      const ref = referencePrices[symbol] || null;
+      results[symbol] = this.executeOpeningAuction(symbol, ref);
+    }
+    this.emit('auction:allCleared', results);
+    return results;
+  }
+
+  /**
+   * Execute Opening Auction for a specific symbol
+   */
+  executeOpeningAuction(symbol, referencePrice = null) {
+    const book = this.books.get(symbol);
+    if (!book) return null;
+
+    const auctionResult = book.executeAuctionUncrossing(referencePrice);
+    const { trades, clearingPrice, clearingVolume } = auctionResult;
+
+    for (const trade of trades) {
+      // In call market, both buyer and seller orders rested in the book prior to uncrossing
+      this.accountManager.settleTrade(trade, true, true);
+      this.emit('trade', trade);
+    }
+
+    if (trades.length > 0) {
+      this.emit('orderbookChange', { symbol, depth: book.getDepth(10) });
+    }
+
+    const report = {
+      symbol,
+      clearingPrice,
+      clearingVolume,
+      tradesCount: trades.length,
+      timestamp: Date.now()
+    };
+
+    this.emit('auction:cleared', report);
+    return report;
   }
 }

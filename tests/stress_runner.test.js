@@ -11,7 +11,9 @@ const suites = [
   { name: 'v0.9 Frontend Modernization Suite', cmd: 'node tests/v09_frontend_modernization.test.js' },
   { name: 'v0.904 User Authentication & Session Security', cmd: 'node tests/auth.test.js' },
   { name: 'v0.905 Geometric Brownian Motion (GBM) Price Discovery', cmd: 'node tests/gbm.test.js' },
-  { name: 'v0.906 News Impact Decay & Spike-and-Settle Engine', cmd: 'node tests/news_decay.test.js' }
+  { name: 'v0.906 News Impact Decay & Spike-and-Settle Engine', cmd: 'node tests/news_decay.test.js' },
+  { name: 'v0.907 Opening Auction Mechanism & Call Market', cmd: 'node tests/opening_auction.test.js' },
+  { name: 'v0.907 Simulation World, Multi-Asset & NPC Fleet', cmd: 'node tests/simulation_world.test.js' }
 ];
 
 const ROUNDS = parseInt(process.env.STRESS_ROUNDS || '5', 10);

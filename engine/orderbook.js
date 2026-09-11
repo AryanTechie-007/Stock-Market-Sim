@@ -384,4 +384,239 @@ export class OrderBook {
     }
     return list;
   }
+
+  /**
+   * Add a limit order during Pre-Market without continuous FIFO matching.
+   * Orders accumulate for the Opening Auction call market.
+   * @param {Object} order
+   * @returns {{ success: boolean, order: Object }}
+   */
+  addPreMarketLimitOrder(order) {
+    order.quantity = Math.max(0, Math.floor(order.quantity));
+    order.originalQuantity = order.quantity;
+    order.filledQuantity = 0;
+    order.timestamp = order.timestamp || Date.now();
+    order.status = 'OPEN';
+
+    if (order.side === 'BUY') {
+      this._insertBid(order);
+    } else {
+      this._insertAsk(order);
+    }
+    this.orders.set(order.id, order);
+    return { success: true, order };
+  }
+
+  /**
+   * Calculate Indicative Equilibrium Price (IEP) and Indicative Equilibrium Volume (IEV)
+   * for the Opening/Closing Call Auction.
+   * Finds the price level P* that maximizes executable volume with minimum imbalance.
+   * @param {number} [referencePrice] Reference price for tie-breaking (e.g. previous close)
+   * @returns {{ clearingPrice: number|null, clearingVolume: number, imbalance: number, imbalanceSide: 'BUY'|'SELL'|'NEUTRAL'|'NONE' }}
+   */
+  calculateIndicativeClearingPrice(referencePrice = null) {
+    if (this.bids.length === 0 || this.asks.length === 0) {
+      return {
+        clearingPrice: referencePrice || null,
+        clearingVolume: 0,
+        imbalance: 0,
+        imbalanceSide: 'NONE'
+      };
+    }
+
+    const bestBid = this.getBestBid();
+    const bestAsk = this.getBestAsk();
+
+    // If books do not cross (best bid < best ask), no executable auction volume
+    if (bestBid === null || bestAsk === null || bestBid < bestAsk) {
+      return {
+        clearingPrice: referencePrice || (this.getSpread().mid || null),
+        clearingVolume: 0,
+        imbalance: 0,
+        imbalanceSide: 'NONE'
+      };
+    }
+
+    // Collect all candidate prices from crossing bids and asks
+    const candidatePriceSet = new Set();
+    for (const b of this.bids) {
+      if (b.price >= bestAsk) candidatePriceSet.add(b.price);
+    }
+    for (const a of this.asks) {
+      if (a.price <= bestBid) candidatePriceSet.add(a.price);
+    }
+
+    if (candidatePriceSet.size === 0) {
+      return {
+        clearingPrice: referencePrice || null,
+        clearingVolume: 0,
+        imbalance: 0,
+        imbalanceSide: 'NONE'
+      };
+    }
+
+    const candidatePrices = Array.from(candidatePriceSet).sort((a, b) => a - b);
+    let maxVolume = 0;
+    const evaluations = [];
+
+    for (const p of candidatePrices) {
+      // Cumulative Buy Volume at or above price p
+      let buyQty = 0;
+      for (const b of this.bids) {
+        if (b.price >= p) buyQty += b.quantity;
+      }
+
+      // Cumulative Sell Volume at or below price p
+      let sellQty = 0;
+      for (const a of this.asks) {
+        if (a.price <= p) sellQty += a.quantity;
+      }
+
+      const execVolume = Math.min(buyQty, sellQty);
+      const imbalance = Math.abs(buyQty - sellQty);
+      const side = buyQty > sellQty ? 'BUY' : sellQty > buyQty ? 'SELL' : 'NEUTRAL';
+
+      if (execVolume > maxVolume) {
+        maxVolume = execVolume;
+      }
+
+      evaluations.push({
+        price: p,
+        executableVolume: execVolume,
+        imbalance,
+        buyQty,
+        sellQty,
+        imbalanceSide: side
+      });
+    }
+
+    if (maxVolume === 0) {
+      return {
+        clearingPrice: referencePrice || null,
+        clearingVolume: 0,
+        imbalance: 0,
+        imbalanceSide: 'NONE'
+      };
+    }
+
+    // Filter candidate prices that maximize executable volume
+    const topVolumeCandidates = evaluations.filter(e => e.executableVolume === maxVolume);
+
+    // Multi-tier tie-breaking:
+    // 1. Minimum imbalance
+    const minImbalance = Math.min(...topVolumeCandidates.map(e => e.imbalance));
+    const minImbalanceCandidates = topVolumeCandidates.filter(e => e.imbalance === minImbalance);
+
+    // 2. Proximity to reference price (previous close or midpoint)
+    const ref = referencePrice || (bestBid + bestAsk) / 2;
+    minImbalanceCandidates.sort((a, b) => {
+      const distA = Math.abs(a.price - ref);
+      const distB = Math.abs(b.price - ref);
+      if (Math.abs(distA - distB) > 0.0001) return distA - distB;
+      return a.price - b.price; // Lowest price determinism
+    });
+
+    const chosen = minImbalanceCandidates[0];
+
+    return {
+      clearingPrice: +(chosen.price.toFixed(2)),
+      clearingVolume: chosen.executableVolume,
+      imbalance: chosen.imbalance,
+      imbalanceSide: chosen.imbalanceSide
+    };
+  }
+
+  /**
+   * Execute the Opening Auction Uncrossing.
+   * Matches all crossing bids and asks at the single uniform clearing price P*.
+   * Priority: Price-time (FIFO) at each eligible limit level.
+   * @param {number} [referencePrice]
+   * @returns {{ trades: Array<Object>, clearingPrice: number|null, clearingVolume: number }}
+   */
+  executeAuctionUncrossing(referencePrice = null) {
+    const indicative = this.calculateIndicativeClearingPrice(referencePrice);
+    const { clearingPrice, clearingVolume } = indicative;
+
+    if (!clearingPrice || clearingVolume <= 0) {
+      return {
+        trades: [],
+        clearingPrice: referencePrice || this.getBestBid() || this.getBestAsk() || null,
+        clearingVolume: 0
+      };
+    }
+
+    const trades = [];
+    let remainingVolumeToMatch = clearingVolume;
+
+    // Cross eligible bids (price >= clearingPrice) against eligible asks (price <= clearingPrice)
+    while (
+      remainingVolumeToMatch > 0 &&
+      this.bids.length > 0 &&
+      this.asks.length > 0 &&
+      this.bids[0].price >= clearingPrice &&
+      this.asks[0].price <= clearingPrice
+    ) {
+      const topBid = this.bids[0];
+      const topAsk = this.asks[0];
+
+      // Prevent self-trading during auction if possible
+      if (topBid.userId === topAsk.userId) {
+        // If same user, advance to next eligible or break
+        break;
+      }
+
+      const matchQty = Math.min(topBid.quantity, topAsk.quantity, remainingVolumeToMatch);
+      if (matchQty <= 0) break;
+
+      topBid.quantity -= matchQty;
+      topBid.filledQuantity += matchQty;
+      topAsk.quantity -= matchQty;
+      topAsk.filledQuantity += matchQty;
+      remainingVolumeToMatch -= matchQty;
+
+      const trade = {
+        id: `auc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        symbol: this.symbol,
+        price: clearingPrice, // Single uniform clearing price for both sides!
+        quantity: matchQty,
+        buyerId: topBid.userId,
+        buyerName: topBid.userName,
+        sellerId: topAsk.userId,
+        sellerName: topAsk.userName,
+        takerSide: 'AUCTION',
+        isAuction: true,
+        makerOrderId: topAsk.id,
+        takerOrderId: topBid.id,
+        buyerLeverage: topBid.leverage || 1,
+        sellerLeverage: topAsk.leverage || 1,
+        buyerIsShort: Boolean(topBid.isShort),
+        sellerIsShort: Boolean(topAsk.isShort),
+        timestamp: Date.now()
+      };
+      trades.push(trade);
+
+      if (topBid.quantity === 0) {
+        topBid.status = 'FILLED';
+        this.orders.delete(topBid.id);
+        this.bids.shift();
+      } else {
+        topBid.status = 'PARTIALLY_FILLED';
+      }
+
+      if (topAsk.quantity === 0) {
+        topAsk.status = 'FILLED';
+        this.orders.delete(topAsk.id);
+        this.asks.shift();
+      } else {
+        topAsk.status = 'PARTIALLY_FILLED';
+      }
+    }
+
+    return {
+      trades,
+      clearingPrice,
+      clearingVolume: clearingVolume - remainingVolumeToMatch
+    };
+  }
 }
+

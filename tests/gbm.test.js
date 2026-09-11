@@ -57,7 +57,7 @@ async function runTests() {
     assert(diff < 0.01, `${comp.symbol} annualVolatility (${comp.annualVolatility}) must scale daily vol by sqrt(252) (${expectedAnnual.toFixed(4)})`);
     console.log(`  [OK] ${comp.symbol}: Drift mu=${(comp.annualReturn * 100).toFixed(1)}%, Vol sigma=${(comp.annualVolatility * 100).toFixed(1)}%`);
   }
-  console.log('[PASS] All 5 listed equities possess valid quantitative drift and volatility parameters\n');
+  console.log(`[PASS] All ${INITIAL_COMPANIES.length} listed equities possess valid quantitative drift and volatility parameters\n`);
 
   // Test 3: Discrete Itô Lemma Step and Non-Negativity
   console.log('Test 3: Discrete GBM Simulation Step and Positive Price Guarantee');

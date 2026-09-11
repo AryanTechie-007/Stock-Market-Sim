@@ -2,10 +2,10 @@
 
 ## Repository Metadata
 
-- **Current Pushed Version:** v0.906
+- **Current Pushed Version:** v0.907
 - **Username:** AryanTechie-007
-- **Push Timestamp:** 2026-09-11 15:52:00 IST (UTC+05:30)
-- **Current Status:** Deployed Build (News Impact Decay & Spike-and-Settle Release)
+- **Push Timestamp:** 2026-09-11 16:05:00 IST (UTC+05:30)
+- **Current Status:** Deployed Build (Opening Auction Mechanism & Simulation World Release)
 - **Repository:** https://github.com/AryanTechie-007/Stock-Market-Sim
 
 ---
@@ -273,6 +273,36 @@ The web client provides a professional desktop terminal layout:
 - **Concurrent News Multi-Event Queue:**
   - Supports overlapping concurrent catalysts across multiple symbols, tracking and resolving active decay curves independently.
 
+### 15. Opening Auction Call Market Engine (`engine/orderbook.js`, `engine/matching.js`)
+- **Call Market Pre-Market Accumulation:**
+  - Orders accumulate in the book during `PRE_MARKET` without continuous FIFO matching, allowing overlapping bids and asks to build institutional liquidity.
+- **Volume Maximization Algorithm ($P^*$):**
+  - Evaluates cumulative buy and sell schedules across candidate price levels, determining the single equilibrium clearing price $P^*$ that maximizes executable volume:
+    $$Q_{\text{exec}}(P) = \min(Q_{\text{buy}}(P), Q_{\text{sell}}(P))$$
+  - Multi-tier tie-breaking: Maximizes volume $\rightarrow$ Minimizes imbalance $|Q_{\text{buy}} - Q_{\text{sell}}| \rightarrow$ Minimizes distance to reference price (previous close / midpoint).
+- **Single Uniform Clearing Price Execution:**
+  - All crossing orders execute at identical price $P^*$.
+  - Unmatched resting shares remain in the order book, creating an uncrossed double auction for regular trading hours.
+  - The opening trade establishes the official `openPrice` and initial candle of the session.
+  - Real-time Indicative Equilibrium Price (IEP) and Volume (IEV) query endpoints (`/api/v1/auction/:symbol`, `/api/v1/auction`).
+
+### 16. Simulation World News Engine & Multi-Asset Expansion (`engine/news-engine.js`, `engine/market.js`, `traders/`)
+- **10-Company Multi-Asset Expansion:**
+  - Expanded listed equities from 5 to 10 companies across 6 distinct sectors:
+    - `AUTO` (Auto · EV), `SOLR` (Clean Energy), `BYTE` (Cloud · AI), `NBNK` (Banking), `MEDL` (Biotech · Pharma).
+    - `AERO` (AeroDynamics Inc. — Aerospace & Defense), `SEMI` (NovaSilicon Technologies — Semiconductors & Hardware), `RETL` (OmniRetail Global — Retail & E-Commerce), `CYBR` (CipherShield Security — Cybersecurity & GovTech), `STRM` (StreamPulse Entertainment — Digital Media).
+  - Each equity possesses full quantitative GBM parameters ($\mu, \sigma$), fundamental valuation statistics, marks, and descriptions.
+- **Dynamic Simulation World News Engine:**
+  - Procedural macroeconomic world context (interest rate environment, CPI inflation, GDP growth rate, sector sentiment trackers).
+  - Five distinct catalyst event classes: Macroeconomic Policy, Sector Waves, Quarterly Earnings Reports (procedural EPS beats and misses), Corporate Catalysts, and Speculative Rumors.
+  - Interleaved with the v0.906 Spike-and-Settle decay engine.
+- **Expanded 23-Bot NPC Trader Fleet:**
+  - Expanded from 10 to 23 autonomous algorithmic bots spanning 8 distinct archetypes:
+    - 4 Market Makers, 4 Momentum Traders, 3 Value Investors, 4 Retail Swarm Bots, 2 Statistical Arbitrageurs, 2 Iceberg Whales.
+    - **High-Frequency Scalpers (`traders/scalper.js`):** Microsecond-level evaluation of the top of book, penny-jumping inside spreads, and rapid order recycling.
+    - **News Sentiment Momentum Reactors (`traders/news-reactor.js`):** Rapidly front-runs initial spike phases and takes profit during the 30s digestion window.
+  - Pre-market auction order priming ensures rich liquidity and executable volume at the opening bell.
+
 ---
 
 ## Technology Stack
@@ -461,6 +491,8 @@ node tests/v08_e2e_simulation.js
 42. Cryptographic scrypt password hashing, unique random salting, constant-time verification, session token lifecycle, and CSRF protection.
 43. Geometric Brownian Motion (GBM) Box-Muller normality, asset parameterization, Itô lognormal non-negativity, trading clock phase gating, regime volatility scaling, market maker fair value quotation, and anti-flatline quiet interval drift.
 44. News Impact Decay overreaction spike (140% confirmed, 160% rumor), convex exponential digestion trajectory, permanent residual convergence (~55%), bearish panic plunge-and-rebound, market maker quote adaptation, and multi-event concurrent queue resilience.
+45. Opening Auction Call Market pre-market accumulation, volume-maximizing clearing price determination (P*), multi-tier tie-breaking, uniform clearing price execution, residual order retention, and automated opening bell trigger establishing official openPrice.
+46. Simulation World News Engine procedural event generation (Macro, Sector, Earnings, Corporate, Rumors), macroeconomic state tracking, 10-company multi-asset parameterization across 6 sectors, and 23-bot NPC fleet execution with Scalper and News Reactor archetypes.
 
 ---
 
@@ -480,7 +512,8 @@ node tests/v08_e2e_simulation.js
 - **v0.903 (Pushed to GitHub):** Production Docker Containerization & CI/CD Pipeline: Engineered multi-stage production Dockerfile based on node:22-alpine with non-root security boundaries and built-in HTTP healthchecks; authored docker-compose.yml with persistent SQLite volume mounts; configured .dockerignore rules; and established automated GitHub Actions CI workflow (.github/workflows/ci.yml) validating all test suites on node:20.x and node:22.x runners.
 - **v0.904 (Pushed to GitHub):** User Authentication, Password Hashing & Session Security: Built native cryptographic credentials subsystem (engine/auth.js) utilizing Node.js crypto.scryptSync with 16-byte random salts and constant-time timingSafeEqual verification; engineered SQLite relational tables (user_credentials, user_sessions) with foreign key relationships; created 24-hour cryptographically randomized session tokens (masess_...) and per-session CSRF tokens (macsrf_...); and mounted RESTful authentication endpoints (/api/v1/auth/register, /login, /me, /logout, /logout-all).
 - **v0.905 (Pushed to GitHub):** Geometric Brownian Motion (GBM) Price Discovery Engine: Engineered continuous stochastic price discovery subsystem (`engine/market.js`) implementing Itô's Lemma Geometric Brownian Motion ($dS_t = \mu S_t dt + \sigma S_t dW_t$) with Box-Muller normal variate generation; parameterized all listed equities with quantitative annual drift ($\mu$) and annualized volatility ($\sigma$); coupled diffusion variance dynamically to `MarketRegimeEngine` multipliers (0.5x to 4.0x); gated stochastic execution strictly to `REGULAR_HOURS`; added quiet interval anti-flatline soft mean-reversion drift synchronizing multi-timeframe candlestick buffers; updated Designated Market Maker quoting logic (`traders/market-maker.js`) to anchor quote ladders around living fair value; and authored full 8-test verification suite (`tests/gbm.test.js`) integrated into multi-round stress runner and repository regression suite.
-- **v0.906 (Current Release):** News Impact Decay & Spike-and-Settle Engine: Engineered behavioral news impact digestion subsystem (`engine/market.js`) modeling the empirical three-stage market response to news catalysts (immediate overreaction spike, 30-second convex exponential digestion, and permanent fundamental residual); parameterized confirmed news at 140% spike with 55% residual and speculative rumors at 160% spike with 30% residual; implemented exact log-ratio step multipliers strictly converging to theoretical targets; coupled sentiment decay and Market Maker quoting adaptation across the digestion horizon; and authored dedicated 7-test verification suite (`tests/news_decay.test.js`) integrated into multi-round stress runner and repository regression suite.
+- **v0.906 (Pushed to GitHub):** News Impact Decay & Spike-and-Settle Engine: Engineered behavioral news impact digestion subsystem (`engine/market.js`) modeling the empirical three-stage market response to news catalysts (immediate overreaction spike, 30-second convex exponential digestion, and permanent fundamental residual); parameterized confirmed news at 140% spike with 55% residual and speculative rumors at 160% spike with 30% residual; implemented exact log-ratio step multipliers strictly converging to theoretical targets; coupled sentiment decay and Market Maker quoting adaptation across the digestion horizon; and authored dedicated 7-test verification suite (`tests/news_decay.test.js`) integrated into multi-round stress runner and repository regression suite.
+- **v0.907 (Current Release):** Opening Auction Mechanism, Simulation World News Engine & Multi-Asset Expansion: Implemented call market opening auction mechanism (`engine/orderbook.js`, `engine/matching.js`) with pre-market order accumulation, volume-maximizing clearing price algorithm ($P^*$), multi-tier tie-breaking, and uniform single clearing price execution establishing session `openPrice`; expanded listed equity universe to 10 companies across 6 economic sectors (`AUTO`, `SOLR`, `BYTE`, `NBNK`, `MEDL`, `AERO`, `SEMI`, `RETL`, `CYBR`, `STRM`); engineered stateful Simulation World News Engine (`engine/news-engine.js`) generating procedural macroeconomic, sector, quarterly earnings, corporate, and rumor catalysts; expanded autonomous NPC trader fleet to 23 bots introducing High-Frequency Scalpers (`traders/scalper.js`) and News Sentiment Momentum Reactors (`traders/news-reactor.js`); authored dedicated automated suites (`tests/opening_auction.test.js`, `tests/simulation_world.test.js`) and verified across 50-execution multi-round stress runner and 24-suite platform regression.
 
 
 

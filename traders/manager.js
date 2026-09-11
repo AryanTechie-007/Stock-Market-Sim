@@ -4,6 +4,8 @@ import { ValueInvestor } from './value-investor.js';
 import { NoiseTrader } from './noise.js';
 import { StatisticalArbitrageTrader } from './arbitrage.js';
 import { IcebergWhaleTrader } from './iceberg.js';
+import { ScalperTrader } from './scalper.js';
+import { NewsReactorTrader } from './news-reactor.js';
 
 export class NPCManager {
   constructor(matchingEngine, marketManager, accountManager, clock, regimeEngine = null) {
@@ -28,6 +30,14 @@ export class NPCManager {
         this.broadcastRegime(regime);
       });
     }
+
+    if (this.clock) {
+      this.clock.on('phaseChange', (state) => {
+        if (state.phase === 'PRE_MARKET') {
+          this.seedPreMarketAuctionOrders();
+        }
+      });
+    }
   }
 
   broadcastRegime(regime) {
@@ -39,7 +49,7 @@ export class NPCManager {
   }
 
   _setupTraders() {
-    // 2 Market Makers (Primary & Secondary)
+    // 4 Market Makers across sectors
     this.traders.push(
       new MarketMaker('bot_mm_alpha', 'MM Alpha Securities', this.matchingEngine, this.marketManager, this.accountManager, this.clock, {
         spreadTarget: 0.006,
@@ -50,10 +60,20 @@ export class NPCManager {
         spreadTarget: 0.010,
         minDelayMs: 1200,
         maxDelayMs: 2800
+      }),
+      new MarketMaker('bot_mm_gamma', 'Jane Street Liquidity', this.matchingEngine, this.marketManager, this.accountManager, this.clock, {
+        spreadTarget: 0.008,
+        minDelayMs: 900,
+        maxDelayMs: 2200
+      }),
+      new MarketMaker('bot_mm_delta', 'Flow Traders Alpha', this.matchingEngine, this.marketManager, this.accountManager, this.clock, {
+        spreadTarget: 0.012,
+        minDelayMs: 1100,
+        maxDelayMs: 2600
       })
     );
 
-    // 2 Momentum Traders
+    // 4 Momentum Traders
     this.traders.push(
       new MomentumTrader('bot_momo_1', 'Velocity Quant Bot', this.matchingEngine, this.marketManager, this.accountManager, this.clock, {
         minDelayMs: 1500,
@@ -62,10 +82,18 @@ export class NPCManager {
       new MomentumTrader('bot_momo_2', 'TrendRider Algorithmic', this.matchingEngine, this.marketManager, this.accountManager, this.clock, {
         minDelayMs: 2000,
         maxDelayMs: 4000
+      }),
+      new MomentumTrader('bot_momo_3', 'Breakout Alpha Bot', this.matchingEngine, this.marketManager, this.accountManager, this.clock, {
+        minDelayMs: 1800,
+        maxDelayMs: 3800
+      }),
+      new MomentumTrader('bot_momo_4', 'Surge Capital Systems', this.matchingEngine, this.marketManager, this.accountManager, this.clock, {
+        minDelayMs: 2200,
+        maxDelayMs: 4200
       })
     );
 
-    // 2 Value Investors
+    // 3 Value Investors
     this.traders.push(
       new ValueInvestor('bot_val_1', 'DeepValue Asset Mgmt', this.matchingEngine, this.marketManager, this.accountManager, this.clock, {
         marginOfSafety: 0.015,
@@ -76,10 +104,15 @@ export class NPCManager {
         marginOfSafety: 0.025,
         minDelayMs: 3000,
         maxDelayMs: 5500
+      }),
+      new ValueInvestor('bot_val_3', 'Berkshire Quant Value', this.matchingEngine, this.marketManager, this.accountManager, this.clock, {
+        marginOfSafety: 0.020,
+        minDelayMs: 2600,
+        maxDelayMs: 5000
       })
     );
 
-    // 2 Noise / Retail Traders
+    // 4 Noise / Retail Swarm Traders
     this.traders.push(
       new NoiseTrader('bot_noise_1', 'Retail Swarm Alpha', this.matchingEngine, this.marketManager, this.accountManager, this.clock, {
         minDelayMs: 1000,
@@ -88,25 +121,91 @@ export class NPCManager {
       new NoiseTrader('bot_noise_2', 'Retail Swarm Beta', this.matchingEngine, this.marketManager, this.accountManager, this.clock, {
         minDelayMs: 1400,
         maxDelayMs: 3200
+      }),
+      new NoiseTrader('bot_noise_3', 'Retail Swarm Gamma', this.matchingEngine, this.marketManager, this.accountManager, this.clock, {
+        minDelayMs: 1200,
+        maxDelayMs: 2800
+      }),
+      new NoiseTrader('bot_noise_4', 'Robinhood Retail Hive', this.matchingEngine, this.marketManager, this.accountManager, this.clock, {
+        minDelayMs: 1100,
+        maxDelayMs: 2600
       })
     );
 
-    // Advanced Algorithmic NPCs (v0.7)
-    // 1 Statistical Arbitrage Bot
+    // 2 Statistical Arbitrage Traders
     this.traders.push(
       new StatisticalArbitrageTrader('bot_arb_1', 'Citadel StatArb Alpha', this.matchingEngine, this.marketManager, this.accountManager, this.clock, {
         minDelayMs: 1200,
         maxDelayMs: 2800
+      }),
+      new StatisticalArbitrageTrader('bot_arb_2', 'TwoSigma Pair Trader', this.matchingEngine, this.marketManager, this.accountManager, this.clock, {
+        minDelayMs: 1400,
+        maxDelayMs: 3200
       })
     );
 
-    // 1 Iceberg Institutional Whale Bot
+    // 2 Iceberg Institutional Whale Bots
     this.traders.push(
       new IcebergWhaleTrader('bot_whale_1', 'BlackRock Execution LP', this.matchingEngine, this.marketManager, this.accountManager, this.clock, {
         minDelayMs: 2000,
         maxDelayMs: 4000
+      }),
+      new IcebergWhaleTrader('bot_whale_2', 'Vanguard Institutional Index', this.matchingEngine, this.marketManager, this.accountManager, this.clock, {
+        minDelayMs: 2400,
+        maxDelayMs: 4500
       })
     );
+
+    // 2 High-Frequency Scalpers
+    this.traders.push(
+      new ScalperTrader('bot_scalp_1', 'Optiver Micro Scalper', this.matchingEngine, this.marketManager, this.accountManager, this.clock, {
+        minDelayMs: 600,
+        maxDelayMs: 1400
+      }),
+      new ScalperTrader('bot_scalp_2', 'Virtu High Frequency LP', this.matchingEngine, this.marketManager, this.accountManager, this.clock, {
+        minDelayMs: 750,
+        maxDelayMs: 1600
+      })
+    );
+
+    // 2 News Sentiment Momentum Reactors
+    this.traders.push(
+      new NewsReactorTrader('bot_news_1', 'HeadlineSurge FastQuant', this.matchingEngine, this.marketManager, this.accountManager, this.clock, {
+        minDelayMs: 1200,
+        maxDelayMs: 3000
+      }),
+      new NewsReactorTrader('bot_news_2', 'Catalyst Momentum Alpha', this.matchingEngine, this.marketManager, this.accountManager, this.clock, {
+        minDelayMs: 1500,
+        maxDelayMs: 3500
+      })
+    );
+  }
+
+  seedPreMarketAuctionOrders() {
+    // In pre-market, bots submit crossing and near-touch limit orders for Opening Auction uncrossing
+    const companies = this.marketManager.getAllCompanies();
+    for (const comp of companies) {
+      const price = comp.price;
+      const buyerBot = this.traders[4]; // bot_val_1
+      const sellerBot = this.traders[7]; // bot_noise_1
+
+      if (buyerBot && sellerBot) {
+        buyerBot.submitOrder({
+          symbol: comp.symbol,
+          side: 'BUY',
+          type: 'LIMIT',
+          price: +(price * (1 + (Math.random() * 0.005))).toFixed(2),
+          quantity: Math.floor(Math.random() * 25 + 10)
+        });
+        sellerBot.submitOrder({
+          symbol: comp.symbol,
+          side: 'SELL',
+          type: 'LIMIT',
+          price: +(price * (1 - (Math.random() * 0.005))).toFixed(2),
+          quantity: Math.floor(Math.random() * 25 + 10)
+        });
+      }
+    }
   }
 
   seedInitialOrderBooks() {

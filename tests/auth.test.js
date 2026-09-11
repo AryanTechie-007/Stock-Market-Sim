@@ -178,6 +178,7 @@ async function run() {
 
   console.log('[SUCCESS] ALL USER AUTHENTICATION & SESSION TESTS PASSED!\n');
   try { storage.db?.close(); } catch (_) {}
+  await new Promise(r => setTimeout(r, 50));
   process.exit(0);
 }
 

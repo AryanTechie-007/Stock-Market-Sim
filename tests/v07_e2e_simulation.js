@@ -63,13 +63,13 @@ server.listen(PORT, async () => {
     assert.strictEqual(data.regime.spreadMultiplier, 1.0);
     console.log('[PASS] Initial market regime verified in bootstrap package:', data.regime.name);
 
-    // Verify NPC Manager has 10 bots (including StatArb and Iceberg)
-    assert.strictEqual(npcManager.traders.length, 10, 'NPC Manager must manage 10 bots');
+    // Verify NPC Manager has at least 10 bots (including StatArb and Iceberg)
+    assert(npcManager.traders.length >= 10, `NPC Manager must manage at least 10 bots (got ${npcManager.traders.length})`);
     const hasStatArb = npcManager.traders.some(t => t.type === 'STAT_ARBITRAGE');
     const hasIceberg = npcManager.traders.some(t => t.type === 'ICEBERG_WHALE');
     assert(hasStatArb, 'Statistical Arbitrage bot must be registered in NPCManager');
     assert(hasIceberg, 'Iceberg Institutional Whale bot must be registered in NPCManager');
-    console.log('[PASS] NPC Manager registered 10 autonomous bots including StatArb and Iceberg Whale');
+    console.log(`[PASS] NPC Manager registered ${npcManager.traders.length} autonomous bots including StatArb and Iceberg Whale`);
 
     // Trigger regime shift to HIGH_VOLATILITY
     console.log('[SERVER] Triggering regime shift to HIGH_VOLATILITY...');
