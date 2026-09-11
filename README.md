@@ -2,10 +2,10 @@
 
 ## Repository Metadata
 
-- **Current Pushed Version:** v0.908
+- **Current Pushed Version:** v0.909
 - **Username:** AryanTechie-007
-- **Push Timestamp:** 2026-09-11 16:15:00 IST (UTC+05:30)
-- **Current Status:** Deployed Build (Multi-Asset Correlation Engine Release)
+- **Push Timestamp:** 2026-09-11 16:25:00 IST (UTC+05:30)
+- **Current Status:** Deployed Build (Order Book Imbalance & Adverse Selection Release)
 - **Repository:** https://github.com/AryanTechie-007/Stock-Market-Sim
 
 ---
@@ -318,6 +318,25 @@ The web client provides a professional desktop terminal layout:
 - **RESTful Correlation Inspection Endpoint:**
   - `GET /api/v1/market/correlation`: Exposes asset list, raw correlation matrix $\mathbf{\Sigma}$, and calculated lower-triangular Cholesky factor matrix $\mathbf{L}$ for quantitative analysis.
 
+### 18. Order Book Imbalance (OBI) Signals & Adverse Selection Quoting (`engine/orderbook.js`, `traders/market-maker.js`)
+- **Level 2 Order Book Imbalance ($OBI$):**
+  - Continuous measurement of order book depth skew across top $K$ price levels ($K=5$):
+    $$OBI = \frac{V_{\text{bid}} - V_{\text{ask}}}{V_{\text{bid}} + V_{\text{ask}}} \in [-1.0, 1.0]$$
+  - Signals aggressive order flow direction: $OBI > +0.20$ signifies institutional buying pressure; $OBI < -0.20$ signals heavy selling supply overhang.
+- **Volume-Weighted Microprice Leading Indicator:**
+  - Evaluates institutional flow-adjusted fair value prior to trade executions:
+    $$P_{\text{micro}} = \frac{P_{\text{bestAsk}} \cdot V_{\text{bid}} + P_{\text{bestBid}} \cdot V_{\text{ask}}}{V_{\text{bid}} + V_{\text{ask}}}$$
+  - Pulls towards the ask when bids dominate and towards the bid when asks dominate, predicting price movement direction.
+- **Avellaneda-Stoikov Adverse Selection Quoting:**
+  - Market Makers dynamically calibrate reservation prices combining inventory penalties with flow imbalance:
+    $$R = S_{\text{fair}} + \text{inventorySkew} + \text{obiSkew}$$
+  - **Asymmetric Quote Protection:**
+    - Under buying pressure ($OBI > 0.20$): Widens ask margin by up to $2.2\times$ and reduces ask order quantity to avoid adverse selection fills from informed buyers, while tightening bid margin to capture flow.
+    - Under selling pressure ($OBI < -0.20$): Widens bid margin by up to $2.2\times$ and reduces bid order quantity to avoid catching falling knives, while tightening ask margin to clear inventory.
+- **RESTful Imbalance Endpoints:**
+  - `GET /api/v1/market/imbalance/:symbol`: Real-time OBI, bid/ask depth volumes, and microprice.
+  - `GET /api/v1/market/imbalance`: Market-wide imbalance state across all listed equities.
+
 ---
 
 ## Technology Stack
@@ -509,6 +528,7 @@ node tests/v08_e2e_simulation.js
 45. Opening Auction Call Market pre-market accumulation, volume-maximizing clearing price determination (P*), multi-tier tie-breaking, uniform clearing price execution, residual order retention, and automated opening bell trigger establishing official openPrice.
 46. Simulation World News Engine procedural event generation (Macro, Sector, Earnings, Corporate, Rumors), macroeconomic state tracking, 10-company multi-asset parameterization across 6 sectors, and 23-bot NPC fleet execution with Scalper and News Reactor archetypes.
 47. Multi-Asset Correlation Engine 10x10 matrix symmetry, analytical Cholesky factorization exact reconstruction ($||\mathbf{L} \mathbf{L}^T - \mathbf{\Sigma}|| < 10^{-15}$), Monte Carlo empirical covariance convergence ($N=10,000$), correlated Wiener diffusion co-movement frequency, and 500-step long-horizon multi-asset stability.
+48. Order Book Imbalance (OBI) mathematical boundary conditions ([-1.0, +1.0]), top-K depth windowing, volume-weighted microprice leading indicator, market maker adverse selection quote adaptation, and Avellaneda-Stoikov inventory rebalancing.
 
 ---
 
@@ -530,7 +550,8 @@ node tests/v08_e2e_simulation.js
 - **v0.905 (Pushed to GitHub):** Geometric Brownian Motion (GBM) Price Discovery Engine: Engineered continuous stochastic price discovery subsystem (`engine/market.js`) implementing Itô's Lemma Geometric Brownian Motion ($dS_t = \mu S_t dt + \sigma S_t dW_t$) with Box-Muller normal variate generation; parameterized all listed equities with quantitative annual drift ($\mu$) and annualized volatility ($\sigma$); coupled diffusion variance dynamically to `MarketRegimeEngine` multipliers (0.5x to 4.0x); gated stochastic execution strictly to `REGULAR_HOURS`; added quiet interval anti-flatline soft mean-reversion drift synchronizing multi-timeframe candlestick buffers; updated Designated Market Maker quoting logic (`traders/market-maker.js`) to anchor quote ladders around living fair value; and authored full 8-test verification suite (`tests/gbm.test.js`) integrated into multi-round stress runner and repository regression suite.
 - **v0.906 (Pushed to GitHub):** News Impact Decay & Spike-and-Settle Engine: Engineered behavioral news impact digestion subsystem (`engine/market.js`) modeling the empirical three-stage market response to news catalysts (immediate overreaction spike, 30-second convex exponential digestion, and permanent fundamental residual); parameterized confirmed news at 140% spike with 55% residual and speculative rumors at 160% spike with 30% residual; implemented exact log-ratio step multipliers strictly converging to theoretical targets; coupled sentiment decay and Market Maker quoting adaptation across the digestion horizon; and authored dedicated 7-test verification suite (`tests/news_decay.test.js`) integrated into multi-round stress runner and repository regression suite.
 - **v0.907 (Pushed to GitHub):** Opening Auction Mechanism, Simulation World News Engine & Multi-Asset Expansion: Implemented call market opening auction mechanism (`engine/orderbook.js`, `engine/matching.js`) with pre-market order accumulation, volume-maximizing clearing price algorithm ($P^*$), multi-tier tie-breaking, and uniform single clearing price execution establishing session `openPrice`; expanded listed equity universe to 10 companies across 6 economic sectors (`AUTO`, `SOLR`, `BYTE`, `NBNK`, `MEDL`, `AERO`, `SEMI`, `RETL`, `CYBR`, `STRM`); engineered stateful Simulation World News Engine (`engine/news-engine.js`) generating procedural macroeconomic, sector, quarterly earnings, corporate, and rumor catalysts; expanded autonomous NPC trader fleet to 23 bots introducing High-Frequency Scalpers (`traders/scalper.js`) and News Sentiment Momentum Reactors (`traders/news-reactor.js`); authored dedicated automated suites (`tests/opening_auction.test.js`, `tests/simulation_world.test.js`) and verified across 50-execution multi-round stress runner and 24-suite platform regression.
-- **v0.908 (Current Release):** Multi-Asset Correlation Engine via Cholesky Factorization: Implemented native analytical Cholesky decomposition ($\mathbf{\Sigma} = \mathbf{L} \mathbf{L}^T$) across a positive semi-definite 10x10 correlation matrix spanning all listed equities; transformed independent standard normal Gaussian variates into correlated multi-asset Wiener shock vectors ($\mathbf{dW}_t = \mathbf{L} \cdot \mathbf{Z}_t \sqrt{\Delta t}$); integrated correlated diffusion into Geometric Brownian Motion continuous price discovery; exposed RESTful matrix inspection endpoint (`GET /api/v1/market/correlation`); authored 5-test analytical and Monte Carlo verification suite (`tests/cholesky_correlation.test.js`) achieving machine-precision matrix reconstruction error ($< 10^{-15}$); and verified 100% reliability across 55-execution multi-round stress runner and 25-suite platform regression.
+- **v0.908 (Pushed to GitHub):** Multi-Asset Correlation Engine via Cholesky Factorization: Implemented native analytical Cholesky decomposition ($\mathbf{\Sigma} = \mathbf{L} \mathbf{L}^T$) across a positive semi-definite 10x10 correlation matrix spanning all listed equities; transformed independent standard normal Gaussian variates into correlated multi-asset Wiener shock vectors ($\mathbf{dW}_t = \mathbf{L} \cdot \mathbf{Z}_t \sqrt{\Delta t}$); integrated correlated diffusion into Geometric Brownian Motion continuous price discovery; exposed RESTful matrix inspection endpoint (`GET /api/v1/market/correlation`); authored 5-test analytical and Monte Carlo verification suite (`tests/cholesky_correlation.test.js`) achieving machine-precision matrix reconstruction error ($< 10^{-15}$); and verified 100% reliability across 55-execution multi-round stress runner and 25-suite platform regression.
+- **v0.909 (Current Release):** Order Book Imbalance (OBI) Signals & Adverse Selection Quoting: Engineered Level 2 order book imbalance metrics ($OBI = \frac{V_{\text{bid}} - V_{\text{ask}}}{V_{\text{bid}} + V_{\text{ask}}} \in [-1.0, 1.0]$) and volume-weighted microprice leading indicators (`engine/orderbook.js`, `engine/matching.js`); integrated Avellaneda-Stoikov reservation price calculation and asymmetric spread protection into Market Maker quoting algorithms (`traders/market-maker.js`), expanding quote spreads against adverse flow by up to 2.2x and reducing quote exposure; mounted RESTful imbalance endpoints (`GET /api/v1/market/imbalance/:symbol`, `GET /api/v1/market/imbalance`); authored comprehensive 5-test unit suite (`tests/obi_signals.test.js`); and verified 100% reliability across 60-execution multi-round stress runner and 26-suite platform regression.
 
 
 

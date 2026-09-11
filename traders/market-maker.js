@@ -43,6 +43,76 @@ export class MarketMaker extends BaseTrader {
     }
   }
 
+  /**
+   * Calculate reservation price and asymmetric quote spreads based on Order Book Imbalance (OBI)
+   * and inventory risk (Avellaneda-Stoikov model).
+   * @param {string} symbol
+   * @returns {Object}
+   */
+  calculateReservationAndSpreads(symbol) {
+    const target = this.marketManager.getCompany(symbol);
+    const fairPrice = (typeof target?.intrinsicValue === 'number' && target.intrinsicValue > 0)
+      ? +(target.price * 0.35 + target.intrinsicValue * 0.65).toFixed(2)
+      : (target?.price || 100);
+
+    // Query Order Book Imbalance across top 5 depth levels
+    const obiData = this.matchingEngine.getOrderBookImbalance(symbol, 5);
+    const obi = (obiData && typeof obiData.obi === 'number') ? obiData.obi : 0;
+
+    // Inventory rebalancing skew (target inventory: 5,000 shares)
+    const user = this.accountManager.getUser(this.id);
+    const holding = user?.holdings.get(symbol);
+    const shares = holding ? holding.quantity : 5000;
+    const invDeviation = (shares - 5000) / 1000;
+    const inventorySkew = -invDeviation * fairPrice * 0.002;
+
+    // OBI Adverse Selection skew (shifts reservation price towards order flow pressure)
+    const obiSkew = obi * fairPrice * 0.0035;
+
+    // Reservation price (fair value adjusted for inventory risk & flow imbalance)
+    const reservationPrice = +(fairPrice + inventorySkew + obiSkew).toFixed(2);
+
+    const spreadMult = this.volatilitySpreads.get(symbol) || 1.0;
+    const effectiveSpread = this.spreadTarget * spreadMult * (this.regimeMultiplier || 1.0);
+    const halfSpread = (fairPrice * effectiveSpread) / 2;
+
+    // Asymmetric Quote Spreads & Sizing to protect against Adverse Selection:
+    let bidSpreadMultiplier = 1.0;
+    let askSpreadMultiplier = 1.0;
+    let bidQtyMultiplier = 1.0;
+    let askQtyMultiplier = 1.0;
+
+    if (obi > 0.20) {
+      // Strong buying pressure: widen asks to protect against informed buying, tighten bids
+      askSpreadMultiplier = 1.0 + Math.min(1.5, obi * 1.2);
+      bidSpreadMultiplier = Math.max(0.4, 1.0 - obi * 0.6);
+      askQtyMultiplier = Math.max(0.3, +(1.0 - obi * 0.7).toFixed(2));
+      bidQtyMultiplier = +(1.0 + obi * 0.5).toFixed(2);
+    } else if (obi < -0.20) {
+      // Strong selling pressure: widen bids to protect against informed dumping, tighten asks
+      const absObi = Math.abs(obi);
+      bidSpreadMultiplier = 1.0 + Math.min(1.5, absObi * 1.2);
+      askSpreadMultiplier = Math.max(0.4, 1.0 - absObi * 0.6);
+      bidQtyMultiplier = Math.max(0.3, +(1.0 - absObi * 0.7).toFixed(2));
+      askQtyMultiplier = +(1.0 + absObi * 0.5).toFixed(2);
+    }
+
+    return {
+      symbol,
+      fairPrice,
+      reservationPrice,
+      obi,
+      shares,
+      inventorySkew: +inventorySkew.toFixed(3),
+      obiSkew: +obiSkew.toFixed(3),
+      halfSpread,
+      bidSpreadMultiplier: +bidSpreadMultiplier.toFixed(3),
+      askSpreadMultiplier: +askSpreadMultiplier.toFixed(3),
+      bidQtyMultiplier,
+      askQtyMultiplier
+    };
+  }
+
   act() {
     const companies = this.marketManager.getAllCompanies();
     // Pick one or two companies each turn to refresh quotes
@@ -50,61 +120,44 @@ export class MarketMaker extends BaseTrader {
     if (!target) return;
 
     const symbol = target.symbol;
-    // Calculate fair reference price: blend last traded price with dynamic GBM intrinsic value
-    const fairPrice = (typeof target.intrinsicValue === 'number' && target.intrinsicValue > 0)
-      ? +(target.price * 0.35 + target.intrinsicValue * 0.65).toFixed(2)
-      : target.price;
 
     // First cancel old quotes for this symbol to refresh ladder
     this.cancelAllMyOrders(symbol);
 
-    const spreadMult = this.volatilitySpreads.get(symbol) || 1.0;
-    const effectiveSpread = this.spreadTarget * spreadMult * (this.regimeMultiplier || 1.0);
-    const halfSpread = (fairPrice * effectiveSpread) / 2;
-
-    // Inventory rebalancing skew
-    const user = this.accountManager.getUser(this.id);
-    const holding = user?.holdings.get(symbol);
-    const shares = holding ? holding.quantity : 5000;
-    let skew = 0;
-    if (shares > 5500) {
-      // Too much inventory: skew down to sell off
-      skew = -fairPrice * 0.002;
-    } else if (shares < 4500) {
-      // Low inventory: skew up to buy in
-      skew = fairPrice * 0.002;
-    }
-
+    const params = this.calculateReservationAndSpreads(symbol);
     const levels = [1, 2, 3];
 
     for (const lvl of levels) {
       const levelMultiplier = lvl * 0.7;
-      const bidPrice = +(fairPrice + skew - halfSpread * levelMultiplier).toFixed(2);
-      const askPrice = +(fairPrice + skew + halfSpread * levelMultiplier).toFixed(2);
+      const bidPrice = +(params.reservationPrice - params.halfSpread * levelMultiplier * params.bidSpreadMultiplier).toFixed(2);
+      const askPrice = +(params.reservationPrice + params.halfSpread * levelMultiplier * params.askSpreadMultiplier).toFixed(2);
 
-      const qty = Math.floor(Math.random() * 25 + 10 * lvl);
+      const baseQty = Math.floor(Math.random() * 25 + 10 * lvl);
+      const bidQty = Math.max(5, Math.round(baseQty * params.bidQtyMultiplier));
+      const askQty = Math.max(5, Math.round(baseQty * params.askQtyMultiplier));
 
       // Place Limit Buy
-      if (bidPrice > 0) {
+      if (bidPrice > 0 && bidQty > 0) {
         this.submitOrder({
           symbol,
           side: 'BUY',
           type: 'LIMIT',
           price: bidPrice,
-          quantity: qty
+          quantity: bidQty
         });
       }
 
       // Place Limit Sell
-      if (askPrice > 0) {
+      if (askPrice > 0 && askQty > 0) {
         this.submitOrder({
           symbol,
           side: 'SELL',
           type: 'LIMIT',
           price: askPrice,
-          quantity: qty
+          quantity: askQty
         });
       }
     }
   }
 }
+

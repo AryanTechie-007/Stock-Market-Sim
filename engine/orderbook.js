@@ -375,6 +375,59 @@ export class OrderBook {
     };
   }
 
+  /**
+   * Calculate Order Book Imbalance (OBI) across the top K price levels
+   * OBI = (V_bid - V_ask) / (V_bid + V_ask) bounded in [-1.0, 1.0]
+   * Also computes volume-weighted microprice.
+   * @param {number} [depthLevels=5] Top K levels to aggregate
+   * @returns {{ symbol: string, obi: number, bidVolume: number, askVolume: number, totalVolume: number, microPrice: number|null, topLevels: number }}
+   */
+  getOrderBookImbalance(depthLevels = 5) {
+    const k = Math.max(1, depthLevels || 5);
+    const l2 = this.getDepth(k);
+
+    let bidVol = 0;
+    for (const b of l2.bids) {
+      bidVol += b.quantity;
+    }
+
+    let askVol = 0;
+    for (const a of l2.asks) {
+      askVol += a.quantity;
+    }
+
+    const totalVol = bidVol + askVol;
+    let obi = 0;
+    if (totalVol > 0) {
+      obi = (bidVol - askVol) / totalVol;
+      obi = Math.max(-1, Math.min(1, obi));
+    }
+
+    let microPrice = null;
+    const bestBid = this.getBestBid();
+    const bestAsk = this.getBestAsk();
+    if (bestBid !== null && bestAsk !== null && totalVol > 0) {
+      // Microprice: P_micro = (bestAsk * bidVol + bestBid * askVol) / totalVol
+      microPrice = +( (bestAsk * bidVol + bestBid * askVol) / totalVol ).toFixed(2);
+    } else if (bestBid !== null && bestAsk !== null) {
+      microPrice = +(((bestBid + bestAsk) / 2).toFixed(2));
+    } else if (bestBid !== null) {
+      microPrice = bestBid;
+    } else if (bestAsk !== null) {
+      microPrice = bestAsk;
+    }
+
+    return {
+      symbol: this.symbol,
+      obi: +obi.toFixed(4),
+      bidVolume: bidVol,
+      askVolume: askVol,
+      totalVolume: totalVol,
+      microPrice,
+      topLevels: k
+    };
+  }
+
   getUserOpenOrders(userId) {
     const list = [];
     for (const order of this.orders.values()) {

@@ -590,4 +590,30 @@ export class MatchingEngine extends EventEmitter {
     this.emit('auction:cleared', report);
     return report;
   }
+
+  /**
+   * Query Order Book Imbalance (OBI) for a specific symbol
+   * @param {string} symbol
+   * @param {number} [depthLevels=5]
+   * @returns {Object|null}
+   */
+  getOrderBookImbalance(symbol, depthLevels = 5) {
+    const book = this.books.get(symbol);
+    if (!book) return null;
+    return book.getOrderBookImbalance(depthLevels);
+  }
+
+  /**
+   * Query Order Book Imbalance (OBI) across all active symbols
+   * @param {number} [depthLevels=5]
+   * @returns {Object<string, Object>}
+   */
+  getAllOrderBookImbalances(depthLevels = 5) {
+    const reports = {};
+    for (const [symbol, book] of this.books.entries()) {
+      reports[symbol] = book.getOrderBookImbalance(depthLevels);
+    }
+    return reports;
+  }
 }
+

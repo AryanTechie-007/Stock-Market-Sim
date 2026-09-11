@@ -132,6 +132,28 @@ app.get('/api/v1/market/correlation', (req, res) => {
   res.json(marketManager.getCorrelationMatrix());
 });
 
+app.get('/api/v1/market/imbalance/:symbol', (req, res) => {
+  const symbol = (req.params.symbol || '').toUpperCase();
+  const depth = parseInt(req.query.depth) || 5;
+  const imbalance = matchingEngine.getOrderBookImbalance(symbol, depth);
+  if (!imbalance) {
+    return res.status(404).json({ error: 'Symbol not found' });
+  }
+  res.json({
+    ...imbalance,
+    timestamp: Date.now()
+  });
+});
+
+app.get('/api/v1/market/imbalance', (req, res) => {
+  const depth = parseInt(req.query.depth) || 5;
+  const imbalances = matchingEngine.getAllOrderBookImbalances(depth);
+  res.json({
+    imbalances,
+    timestamp: Date.now()
+  });
+});
+
 app.get('/api/v1/orderbook/:symbol', (req, res) => {
   const symbol = (req.params.symbol || '').toUpperCase();
   const depth = parseInt(req.query.depth) || 10;
