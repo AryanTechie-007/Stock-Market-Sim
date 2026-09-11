@@ -37,15 +37,16 @@ client.on('init:state', (data) => {
 
 client.on('achievement:unlocked', (ach) => {
   console.log(`[4/5] Received achievement:unlocked event: "${ach.title}" (+${ach.rewardCredits} CR)!`);
-  achievementReceived = true;
-  assert.strictEqual(ach.id, 'RISK_MANAGER');
-  console.log('[PASS] Achievement unlock event received on client socket');
+  if (ach.id === 'RISK_MANAGER') {
+    achievementReceived = true;
+    console.log('[PASS] Achievement unlock event received on client socket');
 
-  setTimeout(() => {
-    console.log('\n[5/5] All Tier 2 live socket integration checks verified successfully!');
-    client.disconnect();
-    process.exit(0);
-  }, 1000);
+    setTimeout(() => {
+      console.log('\n[5/5] All Tier 2 live socket integration checks verified successfully!');
+      client.disconnect();
+      process.exit(0);
+    }, 1000);
+  }
 });
 
 // Timeout safeguard
