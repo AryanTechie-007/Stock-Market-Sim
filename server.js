@@ -15,6 +15,7 @@ import { MarketRegimeEngine } from './engine/regimes.js';
 import { APIKeyManager } from './engine/api-keys.js';
 import { TokenBucketRateLimiter } from './engine/rate-limiter.js';
 import { AuthManager } from './engine/auth.js';
+import { OptionsChainManager, priceCall, pricePut, calculateGreeks, calculateImpliedVolatility } from './engine/options.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -44,6 +45,7 @@ const tournamentManager = new TournamentManager(accountManager, clock, 180, 5000
 const apiKeyManager = new APIKeyManager(storageManager);
 const rateLimiter = new TokenBucketRateLimiter({ capacity: 100, refillRate: 20 });
 const authManager = new AuthManager(storageManager);
+const optionsManager = new OptionsChainManager(marketManager);
 
 // Wire regime events
 regimeEngine.on('regimeChange', (regime) => {
@@ -180,6 +182,79 @@ app.get('/api/v1/market/imbalance', (req, res) => {
   res.json({
     imbalances,
     timestamp: Date.now()
+  });
+});
+
+// --- Derivatives & Black-Scholes Options Chains (v0.912) ---
+app.get('/api/v1/derivatives/options/:symbol', (req, res) => {
+  const symbol = (req.params.symbol || '').toUpperCase();
+  const comp = marketManager.getCompany(symbol);
+  if (!comp) return res.status(404).json({ error: 'Symbol not found' });
+  const chain = optionsManager.getOptionChain(symbol);
+  res.json(chain);
+});
+
+app.get('/api/v1/derivatives/options', (req, res) => {
+  const symbols = marketManager.getAllCompanies().map(c => c.symbol);
+  const chains = {};
+  for (const sym of symbols) {
+    chains[sym] = optionsManager.getOptionChain(sym);
+  }
+  res.json({ count: symbols.length, chains });
+});
+
+app.get('/api/v1/derivatives/pricing', (req, res) => {
+  const spot = parseFloat(req.query.spot);
+  const strike = parseFloat(req.query.strike);
+  const days = parseFloat(req.query.days) || 30;
+  const rate = req.query.rate !== undefined ? parseFloat(req.query.rate) : undefined;
+  const volatility = parseFloat(req.query.volatility) || 0.25;
+  const isCall = (req.query.type || 'CALL').toUpperCase() !== 'PUT';
+
+  if (!spot || isNaN(spot) || !strike || isNaN(strike)) {
+    return res.status(400).json({ error: 'Valid spot and strike parameters required' });
+  }
+
+  const result = optionsManager.priceCustomOption({
+    spot,
+    strike,
+    days,
+    rate,
+    volatility,
+    isCall
+  });
+  res.json(result);
+});
+
+app.get('/api/v1/derivatives/implied-volatility', (req, res) => {
+  const price = parseFloat(req.query.price);
+  const spot = parseFloat(req.query.spot);
+  const strike = parseFloat(req.query.strike);
+  const days = parseFloat(req.query.days) || 30;
+  const rate = (parseFloat(req.query.rate) || 5.25) / 100.0;
+  const isCall = (req.query.type || 'CALL').toUpperCase() !== 'PUT';
+
+  if (!price || isNaN(price) || !spot || isNaN(spot) || !strike || isNaN(strike)) {
+    return res.status(400).json({ error: 'Valid price, spot, and strike parameters required' });
+  }
+
+  const T = days / 365.0;
+  const iv = calculateImpliedVolatility(price, spot, strike, T, rate, isCall);
+
+  if (iv === null) {
+    return res.status(422).json({ error: 'Could not resolve implied volatility for given parameters' });
+  }
+
+  res.json({
+    price,
+    spot,
+    strike,
+    daysToExpiry: days,
+    timeYears: +T.toFixed(4),
+    riskFreeRatePct: +(rate * 100).toFixed(2),
+    type: isCall ? 'CALL' : 'PUT',
+    impliedVolatility: iv,
+    impliedVolatilityPct: +(iv * 100).toFixed(2)
   });
 });
 

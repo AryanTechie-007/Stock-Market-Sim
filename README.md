@@ -2,10 +2,10 @@
 
 ## Repository Metadata
 
-- **Current Pushed Version:** v0.911
+- **Current Pushed Version:** v0.912
 - **Username:** AryanTechie-007
-- **Push Timestamp:** 2026-09-11 16:40:00 IST (UTC+05:30)
-- **Current Status:** Deployed Build (Indicative Auction Call HUD & Simulation World Macro Bar Release)
+- **Push Timestamp:** 2026-09-11 16:45:00 IST (UTC+05:30)
+- **Current Status:** Deployed Build (Options Chains & Black-Scholes-Merton Derivatives Release)
 - **Repository:** https://github.com/AryanTechie-007/Stock-Market-Sim
 
 ---
@@ -372,6 +372,34 @@ The web client provides a professional desktop terminal layout:
 - **Auction Cross Order Entry:**
   - Integrated `MOC (CLOSE)` and `LOC (CLOSE)` order buttons into the order pad (`#typeMocBtn`, `#typeLocBtn`), enabling manual trader participation in closing call market auctions.
 
+### 21. Options Chains & Black-Scholes-Merton Derivatives Engine (`engine/options.js`)
+- **Analytical Black-Scholes-Merton Pricing:**
+  - Implements exact closed-form Black-Scholes valuation for European Call and Put derivatives:
+    $$C(S, K, T, r, \sigma) = S \cdot N(d_1) - K \cdot e^{-r T} \cdot N(d_2)$$
+    $$P(S, K, T, r, \sigma) = K \cdot e^{-r T} \cdot N(-d_2) - S \cdot N(-d_1)$$
+    $$d_1 = \frac{\ln(S / K) + \left(r + \frac{1}{2}\sigma^2\right)T}{\sigma \sqrt{T}}, \quad d_2 = d_1 - \sigma \sqrt{T}$$
+  - Standard normal cumulative distribution function $N(x)$ approximated to within $7.5 \times 10^{-8}$ absolute error via the Abramowitz & Stegun (26.2.17) rational polynomial formulation.
+- **First and Second-Order Greeks Suite:**
+  - **Delta ($\Delta$):** First derivative with respect to underlying spot price ($\Delta_{\text{call}} = N(d_1) \in [0, 1]$, $\Delta_{\text{put}} = N(d_1) - 1 \in [-1, 0]$), satisfying exact difference $\Delta_{\text{call}} - \Delta_{\text{put}} = 1.0$.
+  - **Gamma ($\Gamma$):** Second derivative with respect to spot ($\Gamma = \frac{N'(d_1)}{S \sigma \sqrt{T}}$), measuring convexity and peaking at-the-money.
+  - **Vega ($\mathcal{V}$):** Sensitivity to a 1% shift in annualized volatility ($\mathcal{V} = 0.01 \cdot S \sqrt{T} N'(d_1)$).
+  - **Theta ($\Theta$):** Daily time decay rate of option premium ($\Theta_{\text{daily}} = \Theta_{\text{annual}} / 365$).
+  - **Rho ($\rho$):** Sensitivity to a 1% shift in central bank risk-free interest rates ($\rho = 0.01 \cdot \frac{\partial V}{\partial r}$).
+- **Put-Call Parity Verification:**
+  - Validates continuous equilibrium parity condition:
+    $$C - P = S - K \cdot e^{-r T}$$
+    ensuring arbitrage-free pricing across all generated strikes.
+- **Newton-Raphson & Bisection Implied Volatility (IV) Solvers:**
+  - Solves for implied volatility $\sigma_{\text{IV}}$ given market option prices with rapid quadratic convergence via analytical Vega derivative $\frac{\partial V}{\partial \sigma}$, with robust bisection fallback for deep OTM/ITM contracts.
+- **Multi-Asset Options Chain Generator (`OptionsChainManager`):**
+  - Generates comprehensive option chains for all listed equities across multiple standardized expiration cycles (7D Weekly, 14D Bi-Weekly, 30D Monthly, 60D Quarterly).
+  - Calculates dynamic strike ladders around underlying spot price $S$, theoretical premiums, realistic market maker bid/ask quotes, simulated open interest, and all Greeks.
+- **RESTful Derivatives API Endpoints:**
+  - `GET /api/v1/derivatives/options/:symbol`: Query full multi-expiration option chain for any equity.
+  - `GET /api/v1/derivatives/options`: Market-wide options catalog.
+  - `GET /api/v1/derivatives/pricing`: On-demand Black-Scholes analytical pricer and Greeks calculator.
+  - `GET /api/v1/derivatives/implied-volatility`: Numerical implied volatility recovery endpoint.
+
 ---
 
 ## Technology Stack
@@ -515,6 +543,11 @@ To execute the Indicative Auction Call HUD and Simulation World Macro Bar test s
 node tests/terminal_auction_macro.test.js
 ```
 
+To execute the Options Chains and Black-Scholes-Merton derivatives test suite:
+```bash
+node tests/options_derivatives.test.js
+```
+
 To execute the live WebSocket integration tests:
 ```bash
 node tests/tier2_e2e_simulation.js
@@ -576,6 +609,7 @@ node tests/v08_e2e_simulation.js
 48. Order Book Imbalance (OBI) mathematical boundary conditions ([-1.0, +1.0]), top-K depth windowing, volume-weighted microprice leading indicator, market maker adverse selection quote adaptation, and Avellaneda-Stoikov inventory rebalancing.
 49. Closing Call Auction volume-maximizing clearing price determination (P*), MOC execution priority, LOC boundary condition filtering, uniform single clearing price execution, automatic expiration of unfilled closing orders with collateral refund, and CLOSING_BELL official closePrice establishment.
 50. Indicative Auction Call HUD (IEP, IEV, imbalance surplus badge), Simulation World Macro Bar (policy interest rate, CPI inflation, real GDP growth, macro regime badge, active equity OBI & microprice pill), MOC/LOC order pad entry buttons, and real-time WebSocket / REST polling synchronization.
+51. Options Chains & Black-Scholes-Merton Derivatives Engine analytical Call/Put valuation, Abramowitz-Stegun standard normal CDF/PDF accuracy, exact Put-Call Parity verification ($C - P = S - K e^{-r T}$), first/second order Greeks ($\Delta, \Gamma, \mathcal{V}, \Theta, \rho$), Newton-Raphson/bisection implied volatility recovery, multi-expiration option chain generation, and RESTful derivatives endpoints.
 
 ---
 
@@ -600,7 +634,8 @@ node tests/v08_e2e_simulation.js
 - **v0.908 (Pushed to GitHub):** Multi-Asset Correlation Engine via Cholesky Factorization: Implemented native analytical Cholesky decomposition ($\mathbf{\Sigma} = \mathbf{L} \mathbf{L}^T$) across a positive semi-definite 10x10 correlation matrix spanning all listed equities; transformed independent standard normal Gaussian variates into correlated multi-asset Wiener shock vectors ($\mathbf{dW}_t = \mathbf{L} \cdot \mathbf{Z}_t \sqrt{\Delta t}$); integrated correlated diffusion into Geometric Brownian Motion continuous price discovery; exposed RESTful matrix inspection endpoint (`GET /api/v1/market/correlation`); authored 5-test analytical and Monte Carlo verification suite (`tests/cholesky_correlation.test.js`) achieving machine-precision matrix reconstruction error ($< 10^{-15}$); and verified 100% reliability across 55-execution multi-round stress runner and 25-suite platform regression.
 - **v0.909 (Pushed to GitHub):** Order Book Imbalance (OBI) Signals & Adverse Selection Quoting: Engineered Level 2 order book imbalance metrics ($OBI = \frac{V_{\text{bid}} - V_{\text{ask}}}{V_{\text{bid}} + V_{\text{ask}}} \in [-1.0, 1.0]$) and volume-weighted microprice leading indicators (`engine/orderbook.js`, `engine/matching.js`); integrated Avellaneda-Stoikov reservation price calculation and asymmetric spread protection into Market Maker quoting algorithms (`traders/market-maker.js`), expanding quote spreads against adverse flow by up to 2.2x and reducing quote exposure; mounted RESTful imbalance endpoints (`GET /api/v1/market/imbalance/:symbol`, `GET /api/v1/market/imbalance`); authored comprehensive 5-test unit suite (`tests/obi_signals.test.js`); and verified 100% reliability across 60-execution multi-round stress runner and 26-suite platform regression.
 - **v0.910 (Pushed to GitHub):** Closing Call Auction & Market-On-Close (MOC) / Limit-On-Close (LOC) Orders: Engineered institutional Closing Cross mechanism (`engine/orderbook.js`, `engine/matching.js`) executing at the 04:00 PM `CLOSING_BELL` at single uniform clearing price $P^*_{\text{close}}$ maximizing executable volume; added Market-On-Close (MOC) orders with infinite demand/supply priority and Limit-On-Close (LOC) orders with price boundary execution ($P^* \le P_{\text{limit}}$ for buy, $P^* \ge P_{\text{limit}}$ for sell); implemented automated post-cross order expiration and collateral refund with zero capital leakage; bound `CLOSING_BELL` clock lifecycle event to establish official session `closePrice` inherited by `previousClose` on new day rollover; mounted RESTful endpoints (`GET /api/v1/auction/closing/:symbol`, `GET /api/v1/auction/closing`); authored comprehensive 5-test suite (`tests/closing_auction.test.js`); and verified 100% reliability across 65-execution multi-round stress runner and 27-suite platform regression.
-- **v0.911 (Current Release):** Indicative Auction Call HUD & Simulation World Macro Bar: Integrated persistent Simulation World Macro Bar (`#macroBar`) directly beneath the news ticker displaying live policy rate, CPI inflation, real GDP growth, dynamic macro regime badge, and active stock OBI flow pressure & volume-weighted microprice; engineered Indicative Auction Call HUD (`#auctionCallHud`) positioned immediately above the depth ladder streaming live Indicative Equilibrium Price (IEP), Indicative Equilibrium Volume (IEV), imbalance surplus badge (`BUY SURPLUS`, `SELL SURPLUS`, `MATCHED`, `NO CROSS`), and session phase tags; integrated MOC and LOC order buttons into the trading pad; wired real-time WebSocket listeners (`auction:closingIndicative`, `world:macro`) and REST background synchronizers; authored comprehensive 5-test verification suite (`tests/terminal_auction_macro.test.js`); and verified 100% reliability across 70-execution multi-round stress runner and 28-suite platform regression.
+- **v0.911 (Pushed to GitHub):** Indicative Auction Call HUD & Simulation World Macro Bar: Integrated persistent Simulation World Macro Bar (`#macroBar`) directly beneath the news ticker displaying live policy rate, CPI inflation, real GDP growth, dynamic macro regime badge, and active stock OBI flow pressure & volume-weighted microprice; engineered Indicative Auction Call HUD (`#auctionCallHud`) positioned immediately above the depth ladder streaming live Indicative Equilibrium Price (IEP), Indicative Equilibrium Volume (IEV), imbalance surplus badge (`BUY SURPLUS`, `SELL SURPLUS`, `MATCHED`, `NO CROSS`), and session phase tags; integrated MOC and LOC order buttons into the trading pad; wired real-time WebSocket listeners (`auction:closingIndicative`, `world:macro`) and REST background synchronizers; authored comprehensive 5-test verification suite (`tests/terminal_auction_macro.test.js`); and verified 100% reliability across 70-execution multi-round stress runner and 28-suite platform regression.
+- **v0.912 (Current Release):** Options Chains & Black-Scholes-Merton Derivatives Engine: Engineered analytical Black-Scholes European Call and Put derivatives valuation subsystem (`engine/options.js`) utilizing Abramowitz & Stegun rational normal distribution approximations; computed complete First and Second-Order Greeks suite ($\Delta, \Gamma, \mathcal{V}, \Theta, \rho$); built continuous Put-Call Parity validation; implemented numerical Implied Volatility solver via Newton-Raphson with bisection fallback; created OptionsChainManager generating dynamic multi-strike ladders across 4 standardized expiration cycles (7D, 14D, 30D, 60D) with theoretical quotes, spreads, open interest, and Greeks; mounted RESTful derivatives endpoints (`GET /api/v1/derivatives/options/:symbol`, `/api/v1/derivatives/options`, `/api/v1/derivatives/pricing`, `/api/v1/derivatives/implied-volatility`); authored comprehensive 7-test suite (`tests/options_derivatives.test.js`); and verified 100% reliability across 75-execution multi-round stress runner and 29-suite platform regression.
 
 
 

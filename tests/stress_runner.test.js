@@ -17,7 +17,8 @@ const suites = [
   { name: 'v0.908 Multi-Asset Correlation via Cholesky Factorization', cmd: 'node tests/cholesky_correlation.test.js' },
   { name: 'v0.909 Order Book Imbalance (OBI) & Adverse Selection Quoting', cmd: 'node tests/obi_signals.test.js' },
   { name: 'v0.910 Closing Call Auction & MOC/LOC Orders', cmd: 'node tests/closing_auction.test.js' },
-  { name: 'v0.911 Indicative Auction Call HUD & Macro Bar', cmd: 'node tests/terminal_auction_macro.test.js' }
+  { name: 'v0.911 Indicative Auction Call HUD & Macro Bar', cmd: 'node tests/terminal_auction_macro.test.js' },
+  { name: 'v0.912 Options Chains & Black-Scholes Derivatives', cmd: 'node tests/options_derivatives.test.js' }
 ];
 
 const ROUNDS = parseInt(process.env.STRESS_ROUNDS || '5', 10);
