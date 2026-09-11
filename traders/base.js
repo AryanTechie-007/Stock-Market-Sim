@@ -46,6 +46,10 @@ export class BaseTrader {
     }
   }
 
+  destroy() {
+    this.stop();
+  }
+
   _scheduleNextAction() {
     const minDelay = this.options.minDelayMs || 1500;
     const maxDelay = this.options.maxDelayMs || 4000;

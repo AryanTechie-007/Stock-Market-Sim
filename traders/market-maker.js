@@ -149,51 +149,57 @@ export class MarketMaker extends BaseTrader {
     };
   }
 
-  act() {
-    const companies = this.marketManager.getAllCompanies();
-    // Pick one or two companies each turn to refresh quotes
-    const target = companies[Math.floor(Math.random() * companies.length)];
-    if (!target) return;
-
-    const symbol = target.symbol;
-
+  quoteForSymbol(symbol) {
     // First cancel old quotes for this symbol to refresh ladder
     this.cancelAllMyOrders(symbol);
 
     const params = this.calculateReservationAndSpreads(symbol);
     const levels = [1, 2, 3];
+    const ordersPlaced = [];
 
     for (const lvl of levels) {
       const levelMultiplier = lvl * 0.7;
       const bidPrice = +(params.reservationPrice - params.halfSpread * levelMultiplier * params.bidSpreadMultiplier).toFixed(2);
       const askPrice = +(params.reservationPrice + params.halfSpread * levelMultiplier * params.askSpreadMultiplier).toFixed(2);
 
-      const baseQty = Math.floor(Math.random() * 25 + 10 * lvl);
-      const bidQty = Math.max(5, Math.round(baseQty * params.bidQtyMultiplier));
-      const askQty = Math.max(5, Math.round(baseQty * params.askQtyMultiplier));
+      const regimeSizeScale = this.regimeMultiplier >= 3.0 ? 0.20 : (this.regimeMultiplier >= 2.0 ? 0.50 : 1.0);
+      const baseQty = Math.floor((Math.random() * 25 + 10 * lvl) * regimeSizeScale);
+      const bidQty = Math.max(2, Math.round(baseQty * params.bidQtyMultiplier));
+      const askQty = Math.max(2, Math.round(baseQty * params.askQtyMultiplier));
 
       // Place Limit Buy
       if (bidPrice > 0 && bidQty > 0) {
-        this.submitOrder({
+        const b = this.submitOrder({
           symbol,
           side: 'BUY',
           type: 'LIMIT',
           price: bidPrice,
           quantity: bidQty
         });
+        ordersPlaced.push(b);
       }
 
       // Place Limit Sell
       if (askPrice > 0 && askQty > 0) {
-        this.submitOrder({
+        const a = this.submitOrder({
           symbol,
           side: 'SELL',
           type: 'LIMIT',
           price: askPrice,
           quantity: askQty
         });
+        ordersPlaced.push(a);
       }
     }
+    return ordersPlaced;
+  }
+
+  act() {
+    const companies = this.marketManager.getAllCompanies();
+    // Pick one or two companies each turn to refresh quotes
+    const target = companies[Math.floor(Math.random() * companies.length)];
+    if (!target) return;
+    this.quoteForSymbol(target.symbol);
   }
 }
 

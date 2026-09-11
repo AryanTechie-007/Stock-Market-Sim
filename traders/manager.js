@@ -6,6 +6,7 @@ import { StatisticalArbitrageTrader } from './arbitrage.js';
 import { IcebergWhaleTrader } from './iceberg.js';
 import { ScalperTrader } from './scalper.js';
 import { NewsReactorTrader } from './news-reactor.js';
+import { SpoofingTrader } from './spoofer.js';
 
 export class NPCManager {
   constructor(matchingEngine, marketManager, accountManager, clock, regimeEngine = null) {
@@ -177,6 +178,22 @@ export class NPCManager {
       new NewsReactorTrader('bot_news_2', 'Catalyst Momentum Alpha', this.matchingEngine, this.marketManager, this.accountManager, this.clock, {
         minDelayMs: 1500,
         maxDelayMs: 3500
+      })
+    );
+
+    // 2 Adversarial Spoofing & Layering Bots
+    this.traders.push(
+      new SpoofingTrader('bot_spoofer_1', 'Phantom Layer Alpha', this.matchingEngine, this.marketManager, this.accountManager, this.clock, {
+        phantomSize: 1200,
+        cancelDelayMs: 180,
+        minDelayMs: 2500,
+        maxDelayMs: 5000
+      }),
+      new SpoofingTrader('bot_spoofer_2', 'Predatory Liquidity Hunter', this.matchingEngine, this.marketManager, this.accountManager, this.clock, {
+        phantomSize: 1500,
+        cancelDelayMs: 150,
+        minDelayMs: 3000,
+        maxDelayMs: 6000
       })
     );
   }

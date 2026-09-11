@@ -18,6 +18,7 @@ import { TokenBucketRateLimiter } from './engine/rate-limiter.js';
 import { AuthManager } from './engine/auth.js';
 import { OptionsChainManager, priceCall, pricePut, calculateGreeks, calculateImpliedVolatility } from './engine/options.js';
 import { DarkPoolATS } from './engine/darkpool.js';
+import { MarketSurveillance } from './engine/surveillance.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -50,6 +51,12 @@ const authManager = new AuthManager(storageManager);
 const optionsManager = new OptionsChainManager(marketManager);
 const darkPool = new DarkPoolATS(matchingEngine, accountManager, { minBlockSize: 10 });
 matchingEngine.darkPool = darkPool;
+const surveillance = new MarketSurveillance(matchingEngine, accountManager);
+matchingEngine.surveillance = surveillance;
+
+surveillance.on('surveillance:alert', (alert) => {
+  io.emit('surveillance:alert', alert);
+});
 
 // Wire regime events
 regimeEngine.on('regimeChange', (regime) => {
@@ -586,6 +593,25 @@ app.delete('/api/v1/darkpool/orders/:orderId', (req, res) => {
   }
   if (userId) sendPortfolioUpdate(userId);
   res.json(result);
+});
+
+// Market Surveillance Endpoints
+app.get('/api/v1/surveillance/alerts', (req, res) => {
+  const { userId, symbol, severity } = req.query;
+  const alerts = surveillance.getAlerts({ userId, symbol, severity });
+  res.json({ count: alerts.length, alerts });
+});
+
+app.get('/api/v1/surveillance/metrics/:userId', (req, res) => {
+  const metrics = surveillance.getUserMetrics(req.params.userId);
+  if (!metrics) {
+    return res.status(404).json({ error: 'User metrics not found' });
+  }
+  res.json(metrics);
+});
+
+app.get('/api/v1/surveillance/summary', (req, res) => {
+  res.json(surveillance.getSummary());
 });
 
 // Socket.IO mapping

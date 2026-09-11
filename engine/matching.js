@@ -347,6 +347,12 @@ export class MatchingEngine extends EventEmitter {
       }
     }
 
+    this.emit('orderSubmitted', order);
+
+    for (const trade of result.trades) {
+      this.emit('trade', trade);
+    }
+
     this.emit('orderbookChange', {
       symbol,
       depth: book.getDepth(10)
@@ -588,6 +594,8 @@ export class MatchingEngine extends EventEmitter {
         }
       }
 
+      this.emit('orderCancelled', cancelled);
+
       this.emit('orderbookChange', {
         symbol,
         depth: book.getDepth(10)
@@ -597,6 +605,18 @@ export class MatchingEngine extends EventEmitter {
     }
 
     return { success: false, error: 'Failed to cancel order' };
+  }
+
+  /**
+   * Retrieves queue depth position and priority for a resting limit order
+   * @param {string} symbol
+   * @param {string} orderId
+   * @returns {Object|null}
+   */
+  getOrderQueuePosition(symbol, orderId) {
+    const book = this.books.get(symbol);
+    if (!book) return null;
+    return book.getQueuePosition(orderId);
   }
 
   /**

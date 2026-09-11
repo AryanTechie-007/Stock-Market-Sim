@@ -1099,6 +1099,51 @@ export class OrderBook {
       expiredOrders
     };
   }
+
+  /**
+   * Calculates execution queue position and depth priority for a resting limit order.
+   * Microsecond HFT queue positioning: returns 1-based index and total shares ahead.
+   * @param {string} orderId
+   * @returns {Object|null}
+   */
+  getQueuePosition(orderId) {
+    const order = this.orders.get(orderId);
+    if (!order) return null;
+    const isBid = order.side === 'BUY';
+    const queue = isBid ? this.bids : this.asks;
+    let sharesAhead = 0;
+    let queuePosition = 0;
+    let found = false;
+
+    for (let i = 0; i < queue.length; i++) {
+      const ord = queue[i];
+      if (ord.id === orderId) {
+        queuePosition = i + 1;
+        found = true;
+        break;
+      }
+      sharesAhead += ord.quantity;
+    }
+
+    if (!found) return null;
+
+    const sharesAtSamePrice = queue
+      .filter(o => Math.abs(o.price - order.price) < 0.0001)
+      .reduce((acc, o) => acc + o.quantity, 0);
+
+    return {
+      orderId,
+      symbol: this.symbol,
+      side: order.side,
+      price: order.price,
+      quantity: order.quantity,
+      queuePosition,
+      totalOrdersOnSide: queue.length,
+      sharesAhead,
+      sharesAtSamePrice
+    };
+  }
 }
+
 
 

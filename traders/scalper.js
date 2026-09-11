@@ -23,9 +23,18 @@ export class ScalperTrader extends BaseTrader {
     const book = this.matchingEngine.getOrderBook(comp.symbol);
     if (!book) return;
 
-    // Periodically cancel existing orders to prevent stale executions
-    if (Math.random() < 0.40) {
-      this.cancelAllMyOrders(comp.symbol);
+    // Intelligent queue-aware cancellation: preserve orders with top queue priority
+    const myOrders = this.matchingEngine.getUserOpenOrders ? this.matchingEngine.getUserOpenOrders(this.id) : [];
+    for (const ord of myOrders) {
+      if (ord.symbol === comp.symbol) {
+        const qPos = this.matchingEngine.getOrderQueuePosition(comp.symbol, ord.id);
+        if (qPos && qPos.sharesAhead === 0) {
+          continue; // Retain #1 FIFO queue priority
+        }
+        if (Math.random() < 0.40) {
+          this.matchingEngine.cancelOrder(comp.symbol, ord.id, this.id);
+        }
+      }
     }
 
     const spread = book.getSpread();
