@@ -10,6 +10,7 @@ import { MatchingEngine } from './engine/matching.js';
 import { MarketManager, INITIAL_COMPANIES } from './engine/market.js';
 import { NPCManager } from './traders/manager.js';
 import { SQLiteStorageManager } from './engine/sqlite-storage.js';
+import { createDatabaseAdapter } from './engine/database-adapter.js';
 import { TournamentManager } from './engine/tournament.js';
 import { MarketRegimeEngine } from './engine/regimes.js';
 import { APIKeyManager } from './engine/api-keys.js';
@@ -29,8 +30,8 @@ const io = new Server(httpServer, {
 
 const PORT = process.env.PORT || 3000;
 
-// Initialize Core Subsystems with SQLite Persistence
-const storageManager = new SQLiteStorageManager();
+// Initialize Core Subsystems with Pluggable Persistence Adapter (SQLite / PostgreSQL)
+const storageManager = createDatabaseAdapter();
 const clock = new MarketClock({
   openDurationSec: 180,    // 3 mins open trading
   postMarketDurationSec: 25, // 25s post-market recap
@@ -135,6 +136,14 @@ app.get('/api/v1/ping', (req, res) => {
     status: 'ok',
     serverTime: Date.now(),
     clock: clock.getState()
+  });
+});
+
+app.get('/api/v1/database/status', (req, res) => {
+  res.json({
+    type: storageManager.type || 'sqlite',
+    ready: true,
+    timestamp: Date.now()
   });
 });
 

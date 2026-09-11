@@ -19,7 +19,8 @@ const suites = [
   { name: 'v0.910 Closing Call Auction & MOC/LOC Orders', cmd: 'node tests/closing_auction.test.js' },
   { name: 'v0.911 Indicative Auction Call HUD & Macro Bar', cmd: 'node tests/terminal_auction_macro.test.js' },
   { name: 'v0.912 Options Chains & Black-Scholes Derivatives', cmd: 'node tests/options_derivatives.test.js' },
-  { name: 'v0.913 Dark Pool & ATS Midpoint Cross', cmd: 'node tests/darkpool_ats.test.js' }
+  { name: 'v0.913 Dark Pool & ATS Midpoint Cross', cmd: 'node tests/darkpool_ats.test.js' },
+  { name: 'v0.914 Pluggable Database & PostgreSQL Adapter', cmd: 'node tests/database_adapter.test.js' }
 ];
 
 const ROUNDS = parseInt(process.env.STRESS_ROUNDS || '5', 10);

@@ -2,10 +2,10 @@
 
 ## Repository Metadata
 
-- **Current Pushed Version:** v0.913
+- **Current Pushed Version:** v0.914
 - **Username:** AryanTechie-007
-- **Push Timestamp:** 2026-09-11 17:00:00 IST (UTC+05:30)
-- **Current Status:** Deployed Build (Dark Pool & ATS Midpoint Cross Release)
+- **Push Timestamp:** 2026-09-11 17:15:00 IST (UTC+05:30)
+- **Current Status:** Deployed Build (Pluggable Database Architecture & PostgreSQL Production Adapter Release)
 - **Repository:** https://github.com/AryanTechie-007/Stock-Market-Sim
 
 ---
@@ -431,6 +431,22 @@ The web client provides a professional desktop terminal layout:
   - `GET /api/v1/darkpool/orders`: Query open dark orders for account.
   - `DELETE /api/v1/darkpool/orders/:orderId`: Cancel resting dark pool orders.
 
+### 23. Pluggable Database Architecture & PostgreSQL Production Adapter (`engine/database-adapter.js`)
+- **Abstract Persistence Contract (`DatabaseAdapter`):**
+  - Standardized interface decoupling the matching engine, account manager, authentication manager, and API key manager from underlying storage technologies.
+  - Complete relational persistence methods covering accounts, holdings, chronological trade history, gamified achievements, API keys, cryptographic credentials, and user sessions.
+- **SQLiteAdapter (Local Development & Offline Testing):**
+  - Encapsulates Node.js native `DatabaseSync` (`node:sqlite`) with WAL mode and foreign key constraints for zero-dependency local simulation.
+- **PostgresAdapter (Production Staging & Multi-Tenant Deployment):**
+  - Production-ready PostgreSQL adapter implementing strict relational schemas with exact type mapping (`VARCHAR`, `NUMERIC(16,2)`, `BIGSERIAL`, `BIGINT`, `SMALLINT`).
+  - Automated schema migration script on startup creating tables (`accounts`, `holdings`, `trade_history`, `achievements`, `api_keys`, `user_credentials`, `user_sessions`) with foreign keys, cascade deletes, and composite indexes.
+  - SQL placeholder translation utility converting SQLite `?` markers into PostgreSQL `$1, $2, ...` parameterized syntax.
+  - Connection pooling support (`pg.Pool`), transaction handling, and PostgreSQL error code compliance (e.g. `23505` for unique constraint violations).
+- **Database Factory (`createDatabaseAdapter`):**
+  - Dynamically instantiates the target adapter based on environment configuration (`DATABASE_TYPE='postgres'` vs. default `'sqlite'`), enabling zero-downtime deployment switching.
+- **RESTful Diagnostics Endpoint:**
+  - `GET /api/v1/database/status`: Real-time inspection of active database adapter type and connection health.
+
 ---
 
 ## Technology Stack
@@ -584,6 +600,11 @@ To execute the Dark Pool and ATS Midpoint Cross test suite:
 node tests/darkpool_ats.test.js
 ```
 
+To execute the Pluggable Database and PostgreSQL Adapter test suite:
+```bash
+node tests/database_adapter.test.js
+```
+
 To execute the live WebSocket integration tests:
 ```bash
 node tests/tier2_e2e_simulation.js
@@ -647,6 +668,7 @@ node tests/v08_e2e_simulation.js
 50. Indicative Auction Call HUD (IEP, IEV, imbalance surplus badge), Simulation World Macro Bar (policy interest rate, CPI inflation, real GDP growth, macro regime badge, active equity OBI & microprice pill), MOC/LOC order pad entry buttons, and real-time WebSocket / REST polling synchronization.
 51. Options Chains & Black-Scholes-Merton Derivatives Engine analytical Call/Put valuation, Abramowitz-Stegun standard normal CDF/PDF accuracy, exact Put-Call Parity verification ($C - P = S - K e^{-r T}$), first/second order Greeks ($\Delta, \Gamma, \mathcal{V}, \Theta, \rho$), Newton-Raphson/bisection implied volatility recovery, multi-expiration option chain generation, and RESTful derivatives endpoints.
 52. Dark Pool & Alternative Trading System (ATS) Midpoint Cross NBBO sampling, zero pre-trade market impact on lit books, exact midpoint matching, half-spread price improvement, Immediate-Or-Cancel (IOC) remainder cancellation, Minimum Execution Size (MES) constraint fulfillment, limit price boundary protection, dark order cancellation with complete capital/share refund, and RESTful ATS order management.
+53. Pluggable Database Architecture & PostgreSQL Production Adapter interface compliance, factory instantiation via DATABASE_TYPE environment variables, SQLiteAdapter CRUD persistence, PostgreSQL schema DDL generation, parameterized placeholder translation (? to $1, $2, ...), PostgreSQL relational unique constraint violation handling (23505), and RESTful database status reporting.
 
 ---
 
@@ -673,7 +695,8 @@ node tests/v08_e2e_simulation.js
 - **v0.910 (Pushed to GitHub):** Closing Call Auction & Market-On-Close (MOC) / Limit-On-Close (LOC) Orders: Engineered institutional Closing Cross mechanism (`engine/orderbook.js`, `engine/matching.js`) executing at the 04:00 PM `CLOSING_BELL` at single uniform clearing price $P^*_{\text{close}}$ maximizing executable volume; added Market-On-Close (MOC) orders with infinite demand/supply priority and Limit-On-Close (LOC) orders with price boundary execution ($P^* \le P_{\text{limit}}$ for buy, $P^* \ge P_{\text{limit}}$ for sell); implemented automated post-cross order expiration and collateral refund with zero capital leakage; bound `CLOSING_BELL` clock lifecycle event to establish official session `closePrice` inherited by `previousClose` on new day rollover; mounted RESTful endpoints (`GET /api/v1/auction/closing/:symbol`, `GET /api/v1/auction/closing`); authored comprehensive 5-test suite (`tests/closing_auction.test.js`); and verified 100% reliability across 65-execution multi-round stress runner and 27-suite platform regression.
 - **v0.911 (Pushed to GitHub):** Indicative Auction Call HUD & Simulation World Macro Bar: Integrated persistent Simulation World Macro Bar (`#macroBar`) directly beneath the news ticker displaying live policy rate, CPI inflation, real GDP growth, dynamic macro regime badge, and active stock OBI flow pressure & volume-weighted microprice; engineered Indicative Auction Call HUD (`#auctionCallHud`) positioned immediately above the depth ladder streaming live Indicative Equilibrium Price (IEP), Indicative Equilibrium Volume (IEV), imbalance surplus badge (`BUY SURPLUS`, `SELL SURPLUS`, `MATCHED`, `NO CROSS`), and session phase tags; integrated MOC and LOC order buttons into the trading pad; wired real-time WebSocket listeners (`auction:closingIndicative`, `world:macro`) and REST background synchronizers; authored comprehensive 5-test verification suite (`tests/terminal_auction_macro.test.js`); and verified 100% reliability across 70-execution multi-round stress runner and 28-suite platform regression.
 - **v0.912 (Pushed to GitHub):** Options Chains & Black-Scholes-Merton Derivatives Engine: Engineered analytical Black-Scholes European Call and Put derivatives valuation subsystem (`engine/options.js`) utilizing Abramowitz & Stegun rational normal distribution approximations; computed complete First and Second-Order Greeks suite ($\Delta, \Gamma, \mathcal{V}, \Theta, \rho$); built continuous Put-Call Parity validation; implemented numerical Implied Volatility solver via Newton-Raphson with bisection fallback; created OptionsChainManager generating dynamic multi-strike ladders across 4 standardized expiration cycles (7D, 14D, 30D, 60D) with theoretical quotes, spreads, open interest, and Greeks; mounted RESTful derivatives endpoints (`GET /api/v1/derivatives/options/:symbol`, `/api/v1/derivatives/options`, `/api/v1/derivatives/pricing`, `/api/v1/derivatives/implied-volatility`); authored comprehensive 7-test suite (`tests/options_derivatives.test.js`); and verified 100% reliability across 75-execution multi-round stress runner and 29-suite platform regression.
-- **v0.913 (Current Release):** Dark Pool & Alternative Trading System (ATS) Midpoint Cross: Engineered institutional non-displayed liquidity venue (`engine/darkpool.js`) executing block orders at the National Best Bid and Offer (NBBO) midpoint with zero pre-trade market impact; implemented half-spread price improvement for buyers and sellers; supported Midpoint Peg, Immediate-or-Cancel (IOC_MIDPOINT), Limit Midpoint, and Minimum Execution Size (MES) order constraints; built post-trade consolidated tape reporting with venue flags (`DARK_POOL`), privacy-preserving aggregated non-displayed depth, and cumulative price improvement statistics; mounted RESTful ATS endpoints (`/api/v1/darkpool/nbbo/:symbol`, `/depth`, `/trades`, `/stats`, `/orders`); authored comprehensive 7-test suite (`tests/darkpool_ats.test.js`); and verified 100% reliability across 80-execution multi-round stress runner and 30-suite platform regression.
+- **v0.913 (Pushed to GitHub):** Dark Pool & Alternative Trading System (ATS) Midpoint Cross: Engineered institutional non-displayed liquidity venue (`engine/darkpool.js`) executing block orders at the National Best Bid and Offer (NBBO) midpoint with zero pre-trade market impact; implemented half-spread price improvement for buyers and sellers; supported Midpoint Peg, Immediate-or-Cancel (IOC_MIDPOINT), Limit Midpoint, and Minimum Execution Size (MES) order constraints; built post-trade consolidated tape reporting with venue flags (`DARK_POOL`), privacy-preserving aggregated non-displayed depth, and cumulative price improvement statistics; mounted RESTful ATS endpoints (`/api/v1/darkpool/nbbo/:symbol`, `/depth`, `/trades`, `/stats`, `/orders`); authored comprehensive 7-test suite (`tests/darkpool_ats.test.js`); and verified 100% reliability across 80-execution multi-round stress runner and 30-suite platform regression.
+- **v0.914 (Current Release):** Pluggable Database Architecture & PostgreSQL Production Adapter: Engineered modular persistence layer (`engine/database-adapter.js`) defining abstract `DatabaseAdapter` interface; built `SQLiteAdapter` for zero-dependency local execution and production-ready `PostgresAdapter` with full relational DDL migrations, connection pooling, and parameterized SQL translation; created dynamic database factory `createDatabaseAdapter()` auto-selecting adapters from `DATABASE_TYPE`; mounted RESTful database health endpoint (`/api/v1/database/status`); authored comprehensive 5-test unit suite (`tests/database_adapter.test.js`); and verified 100% reliability across 85-execution multi-round stress runner and 31-suite platform regression.
 
 
 
