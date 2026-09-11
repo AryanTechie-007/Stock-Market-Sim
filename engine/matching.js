@@ -90,6 +90,13 @@ export class MatchingEngine extends EventEmitter {
       return { success: false, error: `Invalid symbol: ${symbol}` };
     }
 
+    // Check if symbol is halted under LULD circuit breaker
+    if (book.isHalted()) {
+      if (type === 'MARKET') {
+        return { success: false, error: `Trading in ${symbol} is currently HALTED by LULD circuit breaker` };
+      }
+    }
+
     const cleanQty = Math.floor(Number(quantity));
     if (isNaN(cleanQty) || cleanQty <= 0) {
       return { success: false, error: 'Quantity must be a positive whole integer' };
@@ -115,15 +122,33 @@ export class MatchingEngine extends EventEmitter {
     const currentMidPrice = book.getSpread().mid || 100;
     let orderIsShort = Boolean(isShort);
 
+    // Reg SHO Rule 201 alternative uptick rule restriction
+    if (orderIsShort && book.regShoTriggered) {
+      const bestBid = book.getBestBid();
+      if (type === 'MARKET') {
+        return {
+          success: false,
+          error: `Reg SHO Rule 201 active for ${symbol}: Short sales cannot execute at market (restricted to passive limit prices above best bid)`
+        };
+      }
+      if (bestBid !== null && cleanPrice <= bestBid) {
+        return {
+          success: false,
+          error: `Reg SHO Rule 201 active for ${symbol}: Short sale limit price ($${cleanPrice}) must be strictly above the best bid ($${bestBid})`
+        };
+      }
+    }
+
     // Balance and holding validations
     if (side === 'BUY') {
       let estimatedPrice = cleanPrice;
       if (type === 'MARKET') {
+        const sweep = this.calculateBookSweepEstimate(symbol, 'BUY', cleanQty);
         const bestAsk = book.getBestAsk();
-        if (!bestAsk) {
+        if (!bestAsk && !sweep) {
           return { success: false, error: 'Cannot execute Market Buy: No sellers in the order book' };
         }
-        estimatedPrice = bestAsk * 1.05; // 5% slippage buffer
+        estimatedPrice = sweep ? sweep.vwap : (bestAsk * 1.05);
       } else if (type === 'STOP_LOSS') {
         estimatedPrice = cleanStopPrice * 1.05;
       } else if (type === 'STOP_LIMIT') {
@@ -333,11 +358,17 @@ export class MatchingEngine extends EventEmitter {
       this._checkStopTriggers(symbol, lastPrice);
     }
 
+    if (result.haltTriggered) {
+      this.emit('circuitBreaker:halt', { symbol, reason: result.reason, durationSec: 30 });
+    }
+
     return {
       success: true,
       order,
       trades: result.trades,
-      remainingOrder: result.remainingOrder
+      remainingOrder: result.remainingOrder,
+      isHalted: result.isHalted,
+      haltTriggered: result.haltTriggered
     };
   }
 
@@ -740,6 +771,111 @@ export class MatchingEngine extends EventEmitter {
       reports[symbol] = book.getOrderBookImbalance(depthLevels);
     }
     return reports;
+  }
+
+  /**
+   * Calculates nonlinear book sweep VWAP and slippage for market orders
+   * @param {string} symbol
+   * @param {'BUY'|'SELL'} side
+   * @param {number} quantity
+   * @returns {Object|null}
+   */
+  calculateBookSweepEstimate(symbol, side, quantity) {
+    const book = this.books.get(symbol);
+    if (!book) return null;
+    const levels = side === 'BUY' ? book.asks : book.bids;
+    if (!levels || levels.length === 0) return null;
+
+    let remaining = quantity;
+    let totalNotional = 0;
+    let filled = 0;
+
+    for (const ord of levels) {
+      const take = Math.min(remaining, ord.quantity);
+      totalNotional += take * ord.price;
+      filled += take;
+      remaining -= take;
+      if (remaining <= 0) break;
+    }
+
+    if (filled === 0) return null;
+    const topOfBook = levels[0].price;
+    // If order size exceeds visible depth, extrapolate remaining shares with nonlinear penalty
+    if (remaining > 0) {
+      const lastPrice = levels[levels.length - 1].price;
+      const penaltyPercent = Math.min(0.20, (remaining / quantity) * 0.10);
+      const penaltyPrice = side === 'BUY' ? lastPrice * (1 + penaltyPercent) : lastPrice * (1 - penaltyPercent);
+      totalNotional += remaining * penaltyPrice;
+      filled += remaining;
+    }
+    const finalVwap = +(totalNotional / filled).toFixed(2);
+    const slippageBps = +(((Math.abs(finalVwap - topOfBook)) / topOfBook) * 10000).toFixed(1);
+    return {
+      symbol,
+      side,
+      quantity,
+      vwap: finalVwap,
+      topOfBook,
+      totalNotional: +totalNotional.toFixed(2),
+      slippageBps,
+      visibleSharesFilled: filled - remaining
+    };
+  }
+
+  /**
+   * Triggers an automated Limit-Up/Limit-Down (LULD) trading halt on a symbol
+   * @param {string} symbol
+   * @param {string} reason
+   * @param {number} durationSec
+   */
+  triggerSymbolHalt(symbol, reason = 'LULD_BREACH', durationSec = 30) {
+    const book = this.books.get(symbol);
+    if (!book) return null;
+    const haltInfo = book.triggerHalt(reason, durationSec);
+    this.emit('circuitBreaker:halt', haltInfo);
+    return haltInfo;
+  }
+
+  /**
+   * Resumes trading on a halted symbol and uncrosses accumulated orders via call auction
+   * @param {string} symbol
+   * @param {number} [referencePrice]
+   */
+  executeResumptionAuction(symbol, referencePrice = null) {
+    const book = this.books.get(symbol);
+    if (!book) return null;
+
+    const auctionResult = book.executeAuctionUncrossing(referencePrice || book.referencePrice);
+    const { trades, clearingPrice, clearingVolume } = auctionResult;
+
+    book.resumeTrading();
+    if (clearingPrice) {
+      book.setReferencePrice(clearingPrice);
+    }
+
+    for (const trade of trades) {
+      const buyerWasMaker = trade.takerSide === 'SELL' || trade.isAuction;
+      const sellerWasMaker = trade.takerSide === 'BUY' || trade.isAuction;
+      this.accountManager.settleTrade(trade, buyerWasMaker, sellerWasMaker);
+      this.emit('trade', trade);
+    }
+
+    const report = {
+      symbol,
+      clearingPrice,
+      clearingVolume,
+      tradesCount: trades.length,
+      timestamp: Date.now()
+    };
+
+    this.emit('circuitBreaker:resumed', report);
+    this.emit('orderbookChange', { symbol, depth: book.getDepth(10) });
+    return report;
+  }
+
+  getLULDBands(symbol) {
+    const book = this.books.get(symbol);
+    return book ? book.getLULDBands() : null;
   }
 }
 

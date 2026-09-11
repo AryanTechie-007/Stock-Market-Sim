@@ -261,9 +261,10 @@ test('4. Immediate-Or-Cancel (IOC_MIDPOINT) execution and remainder cancellation
   assert.equal(darkDepth.buyOrderCount, 0);
 
   // Ensure reserved capital for 60 unexecuted shares was unlocked
-  // Cost paid for 40 shares @ 605 = 24,200 credits
+  // Cost paid for 40 shares @ 605 = 24,200 credits + maker transaction fee
   assert.equal(darkBNbnk.lockedCredits, 0);
-  assert.equal(darkBNbnk.credits, initialCredits - 24200);
+  const tradeFee = iocRes.trades[0].fee || 2.42;
+  assert.equal(darkBNbnk.credits, +(initialCredits - 24200 - tradeFee).toFixed(2));
 });
 
 test('5. Minimum Execution Size (MES) constraint and limit price protection', () => {
@@ -384,64 +385,97 @@ test('6. Dark pool order cancellation and fund unlock verification', () => {
 
 test('7. REST API Endpoints for Dark Pool & ATS', async () => {
   const baseUrl = 'http://localhost:3000';
+  let serverProcess = null;
 
-  // 1. Fetch Dark Pool NBBO
-  const nbboRes = await fetch(`${baseUrl}/api/v1/darkpool/nbbo/AUTO`);
-  assert.ok(nbboRes.status === 200 || nbboRes.status === 404);
+  // Check if live server is reachable; if not, spin up daemon for test
+  let isReachable = false;
+  try {
+    const ping = await fetch(`${baseUrl}/api/v1/ping`, { signal: AbortSignal.timeout(600) });
+    if (ping.ok) isReachable = true;
+  } catch (e) {
+    isReachable = false;
+  }
 
-  // 2. Fetch Dark Pool Depth
-  const depthRes = await fetch(`${baseUrl}/api/v1/darkpool/depth/AUTO`);
-  assert.equal(depthRes.status, 200);
-  const depthData = await depthRes.json();
-  assert.equal(depthData.symbol, 'AUTO');
-  assert.equal(typeof depthData.totalBuyVolume, 'number');
-  assert.equal(typeof depthData.totalSellVolume, 'number');
+  if (!isReachable) {
+    const { spawn } = await import('node:child_process');
+    serverProcess = spawn('node', ['server.js'], { stdio: 'ignore' });
+    for (let i = 0; i < 20; i++) {
+      await new Promise(r => setTimeout(r, 250));
+      try {
+        const ping = await fetch(`${baseUrl}/api/v1/ping`, { signal: AbortSignal.timeout(500) });
+        if (ping.ok) {
+          isReachable = true;
+          break;
+        }
+      } catch (e) {}
+    }
+  }
 
-  // 3. Fetch Dark Pool Platform Stats
-  const statsRes = await fetch(`${baseUrl}/api/v1/darkpool/stats`);
-  assert.equal(statsRes.status, 200);
-  const statsData = await statsRes.json();
-  assert.equal(typeof statsData.totalTrades, 'number');
-  assert.equal(typeof statsData.totalVolume, 'number');
-  assert.equal(typeof statsData.totalPriceImprovement, 'number');
+  try {
+    assert.ok(isReachable, 'Server must be active on port 3000 for Dark Pool REST API tests');
 
-  // 4. Fetch Dark Pool Trades History
-  const tradesRes = await fetch(`${baseUrl}/api/v1/darkpool/trades`);
-  assert.equal(tradesRes.status, 200);
-  const tradesData = await tradesRes.json();
-  assert.ok(Array.isArray(tradesData.trades));
+    // 1. Fetch Dark Pool NBBO
+    const nbboRes = await fetch(`${baseUrl}/api/v1/darkpool/nbbo/AUTO`);
+    assert.ok(nbboRes.status === 200 || nbboRes.status === 404);
 
-  // 5. Submit Dark Pool Order via API
-  const orderRes = await fetch(`${baseUrl}/api/v1/darkpool/orders`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      userId: 'api_dark_trader',
-      userName: 'API Dark Trader',
-      symbol: 'AUTO',
-      side: 'BUY',
-      type: 'MIDPOINT_PEG',
-      quantity: 25
-    })
-  });
-  assert.equal(orderRes.status, 201);
-  const orderData = await orderRes.json();
-  assert.equal(orderData.success, true);
-  assert.equal(orderData.order.venue, 'DARK_POOL');
-  assert.equal(orderData.order.symbol, 'AUTO');
+    // 2. Fetch Dark Pool Depth
+    const depthRes = await fetch(`${baseUrl}/api/v1/darkpool/depth/AUTO`);
+    assert.equal(depthRes.status, 200);
+    const depthData = await depthRes.json();
+    assert.equal(depthData.symbol, 'AUTO');
+    assert.equal(typeof depthData.totalBuyVolume, 'number');
+    assert.equal(typeof depthData.totalSellVolume, 'number');
 
-  // 6. Query User's Dark Pool Orders
-  const userOrdersRes = await fetch(`${baseUrl}/api/v1/darkpool/orders?userId=api_dark_trader`);
-  assert.equal(userOrdersRes.status, 200);
-  const userOrders = await userOrdersRes.json();
-  assert.ok(userOrders.count >= 1);
+    // 3. Fetch Dark Pool Platform Stats
+    const statsRes = await fetch(`${baseUrl}/api/v1/darkpool/stats`);
+    assert.equal(statsRes.status, 200);
+    const statsData = await statsRes.json();
+    assert.equal(typeof statsData.totalTrades, 'number');
+    assert.equal(typeof statsData.totalVolume, 'number');
+    assert.equal(typeof statsData.totalPriceImprovement, 'number');
 
-  // 7. Cancel Dark Pool Order via API
-  const cancelRes = await fetch(`${baseUrl}/api/v1/darkpool/orders/${orderData.order.id}?userId=api_dark_trader`, {
-    method: 'DELETE'
-  });
-  assert.equal(cancelRes.status, 200);
-  const cancelData = await cancelRes.json();
-  assert.equal(cancelData.success, true);
-  assert.equal(cancelData.order.status, 'CANCELLED');
+    // 4. Fetch Dark Pool Trades History
+    const tradesRes = await fetch(`${baseUrl}/api/v1/darkpool/trades`);
+    assert.equal(tradesRes.status, 200);
+    const tradesData = await tradesRes.json();
+    assert.ok(Array.isArray(tradesData.trades));
+
+    // 5. Submit Dark Pool Order via API
+    const orderRes = await fetch(`${baseUrl}/api/v1/darkpool/orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: 'api_dark_trader',
+        userName: 'API Dark Trader',
+        symbol: 'AUTO',
+        side: 'BUY',
+        type: 'MIDPOINT_PEG',
+        quantity: 25
+      })
+    });
+    assert.equal(orderRes.status, 201);
+    const orderData = await orderRes.json();
+    assert.equal(orderData.success, true);
+    assert.equal(orderData.order.venue, 'DARK_POOL');
+    assert.equal(orderData.order.symbol, 'AUTO');
+
+    // 6. Query User's Dark Pool Orders
+    const userOrdersRes = await fetch(`${baseUrl}/api/v1/darkpool/orders?userId=api_dark_trader`);
+    assert.equal(userOrdersRes.status, 200);
+    const userOrders = await userOrdersRes.json();
+    assert.ok(userOrders.count >= 1);
+
+    // 7. Cancel Dark Pool Order via API
+    const cancelRes = await fetch(`${baseUrl}/api/v1/darkpool/orders/${orderData.order.id}?userId=api_dark_trader`, {
+      method: 'DELETE'
+    });
+    assert.equal(cancelRes.status, 200);
+    const cancelData = await cancelRes.json();
+    assert.equal(cancelData.success, true);
+    assert.equal(cancelData.order.status, 'CANCELLED');
+  } finally {
+    if (serverProcess) {
+      serverProcess.kill();
+    }
+  }
 });

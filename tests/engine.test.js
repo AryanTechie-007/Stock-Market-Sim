@@ -36,7 +36,7 @@ console.log('[PASS] FIFO Price-Time matching executed correctly');
 
 // Test 3: AccountManager balances & locks
 console.log('Test 3: AccountManager balances & trade settlement');
-const accts = new AccountManager(100000);
+const accts = new AccountManager(100000, null, { enableFees: false });
 const uAlice = accts.getOrCreateUser('alice', 'Alice');
 const uBob = accts.getOrCreateUser('bob', 'Bob');
 
@@ -142,7 +142,7 @@ console.log('[PASS] Account state serialized and successfully restored');
 // Test 7: Native SQLite DatabaseSync Relational Persistence
 console.log('Test 7: Native SQLite relational tables and full roundtrip');
 const memorySqlite = new SQLiteStorageManager(':memory:');
-const sqliteAccts = new AccountManager(100000, memorySqlite);
+const sqliteAccts = new AccountManager(100000, memorySqlite, { enableFees: false });
 
 const charlie = sqliteAccts.getOrCreateUser('charlie', 'Charlie Quant');
 assert.strictEqual(charlie.credits, 100000);
@@ -379,7 +379,7 @@ console.log('[PASS] OCO mutual cancellation: Limit execution cancelled resting S
 
 // Test 13: Short Selling & Buy to Cover
 console.log('\nTest 13: Short Selling & Buy to Cover with Realized P&L');
-const shortAccts = new AccountManager(100000);
+const shortAccts = new AccountManager(100000, null, { enableFees: false });
 const shortUser = shortAccts.getOrCreateUser('short_seller', 'Bearish Quant');
 const buyerUser = shortAccts.getOrCreateUser('bull_buyer', 'Bullish Buyer');
 
@@ -427,7 +427,7 @@ console.log('[PASS] Short selling and Buy-to-Cover settled with accurate P&L acc
 console.log('\nTest 14: Margin Borrowing, Maintenance Margin, & Liquidation');
 const marginClock = new MarketClock();
 marginClock.phase = 'REGULAR_HOURS';
-const marginAccts = new AccountManager(10000);
+const marginAccts = new AccountManager(10000, null, { enableFees: false });
 const marginEngine = new MatchingEngine(['SOLR'], marginAccts, marginClock);
 
 const mUser = marginAccts.getOrCreateUser('margin_trader', 'Leveraged Trader');

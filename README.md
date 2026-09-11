@@ -2,10 +2,10 @@
 
 ## Repository Metadata
 
-- **Current Pushed Version:** v0.915
+- **Current Pushed Version:** v0.916
 - **Username:** AryanTechie-007
-- **Push Timestamp:** 2026-09-11 19:45:00 IST (UTC+05:30)
-- **Current Status:** Deployed Build (Endogenous Price Discovery, GARCH(1,1) Stochastic Volatility & Merton Jump-Diffusion Release)
+- **Push Timestamp:** 2026-09-11 19:58:00 IST (UTC+05:30)
+- **Current Status:** Deployed Build (Trading Frictions, Short Borrow Financing & LULD Circuit Breakers Release)
 - **Repository:** https://github.com/AryanTechie-007/Stock-Market-Sim
 
 ---
@@ -472,6 +472,31 @@ The web client provides a professional desktop terminal layout:
 - **Configurable Session Clock:**
   - Added dynamic session duration reconfiguration (`clock.setDurations`) allowing customizable trading session lengths (180s, 300s, 600s, 1200s) for empirical mean-reversion analysis.
 
+### 25. Trading Frictions, Short Borrow Financing & LULD Circuit Breakers (`engine/accounts.js`, `engine/orderbook.js`, `engine/matching.js`)
+- **Exchange Maker-Taker Fee Schedule:**
+  - Institutional fee structure embedded directly into account settlement:
+    - **Maker Fee:** 1 bp ($0.01\%$) charged on passive resting liquidity.
+    - **Taker Fee:** 3 bps ($0.03\%$) + $\$0.005$/share with a minimum charge of $\$0.50$, accurately reflecting real equity execution venues.
+  - Fees are deducted automatically on trade clearing, credited to user trade receipts (`buyerTrade.fee`, `sellerTrade.fee`), and accumulated into cumulative accounting ledgers (`user.totalFeesPaid`).
+- **Tiered Short Stock Borrow Financing Fees:**
+  - Realistic stock loan financing fees accrued daily against outstanding short liabilities:
+    - **Easy-To-Borrow (ETB):** Standard $1.0\%$ annualized borrow fee rate.
+    - **Hard-To-Borrow (HTB):** Heightened $12.0\%$ annualized borrow rate applied to volatile, high-demand equities (`SOLR`, `STRM`, `BYTE`).
+  - Automated financing calculation: $\text{Fee} = \text{Short Shares} \times \text{Price} \times \text{Rate} \times \frac{\text{Days}}{365}$.
+- **Limit-Up / Limit-Down (LULD) Circuit Breakers:**
+  - Real-time volatility guardrail establishing dynamic price bands at $\pm 8\%$ of the 5-minute reference price:
+    - Upper Band: $P_{\text{ref}} \times 1.08$; Lower Band: $P_{\text{ref}} \times 0.92$.
+  - Automated 30-second trading halt triggered immediately upon an executed match breaching either boundary.
+  - Aggressive market orders submitted during halts are rejected with descriptive regulatory error codes (`TRADING_HALTED`).
+  - Resting limit orders continue to accumulate, building uncrossed depth without executing.
+- **Resumption Call Auction:**
+  - Reopens halted trading books via volume-maximizing single uniform clearing price auctions (`executeResumptionAuction`), resetting LULD reference prices and cleanly restoring continuous double-auction trading.
+- **Reg SHO Rule 201 Alternative Uptick Rule:**
+  - Automated circuit breaker triggered when an equity suffers an intraday decline $\ge 10\%$ from its previous session close.
+  - Restricts short sales to passive limit orders placed strictly above the National Best Bid (`price > bestBid`), rejecting aggressive short market orders and short limit bids at or below the prevailing bid.
+- **Nonlinear Order Book Sweep VWAP & Slippage:**
+  - Analytical execution modeling (`calculateBookSweepEstimate`) evaluating volume-weighted average price (VWAP) across visible depth levels, applying quadratic liquidity depletion penalties to oversized market orders.
+
 ---
 
 ## Technology Stack
@@ -695,6 +720,7 @@ node tests/v08_e2e_simulation.js
 52. Dark Pool & Alternative Trading System (ATS) Midpoint Cross NBBO sampling, zero pre-trade market impact on lit books, exact midpoint matching, half-spread price improvement, Immediate-Or-Cancel (IOC) remainder cancellation, Minimum Execution Size (MES) constraint fulfillment, limit price boundary protection, dark order cancellation with complete capital/share refund, and RESTful ATS order management.
 53. Pluggable Database Architecture & PostgreSQL Production Adapter interface compliance, factory instantiation via DATABASE_TYPE environment variables, SQLiteAdapter CRUD persistence, PostgreSQL schema DDL generation, parameterized placeholder translation (? to $1, $2, ...), PostgreSQL relational unique constraint violation handling (23505), and RESTful database status reporting.
 54. Endogenous Price Discovery, GARCH(1,1) Stochastic Volatility & Merton Jump-Diffusion zero artificial price drift during quiet periods, order-flow-driven price formation strictly upon book matches, GARCH(1,1) dynamic volatility clustering ($\alpha=0.08, \beta=0.88$) and decay, Merton jump-diffusion Poisson arrival process ($\lambda=8.0, \mu_J=-0.015, \sigma_J=0.05$) with heavy-tailed kurtosis ($>3.0$), crisis-driven dynamic correlation breakdown and positive-definite Cholesky factorization, and Market Maker noisy fair-value microprice quotation without hidden oracle dependencies.
+55. Trading Frictions, Short Borrow Financing & LULD Circuit Breakers exchange maker-taker fee schedule deduction (maker 1 bp, taker 3 bps + $0.005/sh min $0.50), tiered short stock borrow financing fees (ETB 1% vs HTB 12% annual rate), LULD dynamic price bands ($\pm 8\%$) and 30s automated trading halt, rejection of aggressive market flow during halts with order book depth accumulation, volume-maximizing call auction resumption uncrossing, Reg SHO Rule 201 alternative uptick rule restriction upon 10% intraday drawdown, and nonlinear visible depth sweep VWAP / slippage modeling.
 
 ---
 
@@ -723,4 +749,5 @@ node tests/v08_e2e_simulation.js
 - **v0.912 (Pushed to GitHub):** Options Chains & Black-Scholes-Merton Derivatives Engine: Engineered analytical Black-Scholes European Call and Put derivatives valuation subsystem (`engine/options.js`) utilizing Abramowitz & Stegun rational normal distribution approximations; computed complete First and Second-Order Greeks suite ($\Delta, \Gamma, \mathcal{V}, \Theta, \rho$); built continuous Put-Call Parity validation; implemented numerical Implied Volatility solver via Newton-Raphson with bisection fallback; created OptionsChainManager generating dynamic multi-strike ladders across 4 standardized expiration cycles (7D, 14D, 30D, 60D) with theoretical quotes, spreads, open interest, and Greeks; mounted RESTful derivatives endpoints (`GET /api/v1/derivatives/options/:symbol`, `/api/v1/derivatives/options`, `/api/v1/derivatives/pricing`, `/api/v1/derivatives/implied-volatility`); authored comprehensive 7-test suite (`tests/options_derivatives.test.js`); and verified 100% reliability across 75-execution multi-round stress runner and 29-suite platform regression.
 - **v0.913 (Pushed to GitHub):** Dark Pool & Alternative Trading System (ATS) Midpoint Cross: Engineered institutional non-displayed liquidity venue (`engine/darkpool.js`) executing block orders at the National Best Bid and Offer (NBBO) midpoint with zero pre-trade market impact; implemented half-spread price improvement for buyers and sellers; supported Midpoint Peg, Immediate-or-Cancel (IOC_MIDPOINT), Limit Midpoint, and Minimum Execution Size (MES) order constraints; built post-trade consolidated tape reporting with venue flags (`DARK_POOL`), privacy-preserving aggregated non-displayed depth, and cumulative price improvement statistics; mounted RESTful ATS endpoints (`/api/v1/darkpool/nbbo/:symbol`, `/depth`, `/trades`, `/stats`, `/orders`); authored comprehensive 7-test suite (`tests/darkpool_ats.test.js`); and verified 100% reliability across 80-execution multi-round stress runner and 30-suite platform regression.
 - **v0.914 (Pushed to GitHub):** Pluggable Database Architecture & PostgreSQL Production Adapter: Engineered modular persistence layer (`engine/database-adapter.js`) defining abstract `DatabaseAdapter` interface; built `SQLiteAdapter` for zero-dependency local execution and production-ready `PostgresAdapter` with full relational DDL migrations, connection pooling, and parameterized SQL translation; created dynamic database factory `createDatabaseAdapter()` auto-selecting adapters from `DATABASE_TYPE`; mounted RESTful database health endpoint (`/api/v1/database/status`); authored comprehensive 5-test unit suite (`tests/database_adapter.test.js`); and verified 100% reliability across 85-execution multi-round stress runner and 31-suite platform regression.
-- **v0.915 (Current Release):** Endogenous Price Discovery, GARCH(1,1) Stochastic Volatility & Merton Jump-Diffusion: Decoupled tradable price formation from exogenous stochastic processes, ensuring prices and candlesticks emerge strictly from matched transactions; implemented GARCH(1,1) continuous volatility clustering ($\alpha=0.08, \beta=0.88$); layered compound Poisson Merton jump-diffusion process ($\lambda=8.0, \mu_J=-0.015, \sigma_J=0.05$) producing heavy-tailed return distributions (kurtosis $>3.0$); engineered crisis-driven dynamic correlation breakdown with positive-definite Cholesky factorization; updated Market Maker quoting to noisy microprice estimation removing hidden oracle dependencies; implemented configurable session clock durations; authored comprehensive 6-test unit suite (`tests/endogenous_price_garch.test.js`); and verified 100% reliability across 90-execution multi-round stress runner and 32-suite platform regression.
+- **v0.915 (Pushed to GitHub):** Endogenous Price Discovery, GARCH(1,1) Stochastic Volatility & Merton Jump-Diffusion: Decoupled tradable price formation from exogenous stochastic processes, ensuring prices and candlesticks emerge strictly from matched transactions; implemented GARCH(1,1) continuous volatility clustering ($\alpha=0.08, \beta=0.88$); layered compound Poisson Merton jump-diffusion process ($\lambda=8.0, \mu_J=-0.015, \sigma_J=0.05$) producing heavy-tailed return distributions (kurtosis $>3.0$); engineered crisis-driven dynamic correlation breakdown with positive-definite Cholesky factorization; updated Market Maker quoting to noisy microprice estimation removing hidden oracle dependencies; implemented configurable session clock durations; authored comprehensive 6-test unit suite (`tests/endogenous_price_garch.test.js`); and verified 100% reliability across 90-execution multi-round stress runner and 32-suite platform regression.
+- **v0.916 (Current Release):** Trading Frictions, Short Borrow Financing & LULD Circuit Breakers: Integrated institutional maker-taker transaction fee schedule (maker 1 bp, taker 3 bps + $0.005/sh min $0.50) deducted in account settlements and recorded on trade receipts; implemented tiered short stock borrow financing fees (ETB 1% vs HTB 12% annual rate on SOLR, STRM, BYTE) accrued daily against short liabilities; engineered Limit-Up / Limit-Down (LULD) $\pm 8\%$ dynamic price bands with automated 30s trading halts, market order rejection during halts, depth accumulation, and volume-maximizing resumption call auctions; implemented Reg SHO Rule 201 alternative uptick rule triggered upon $\ge 10\%$ intraday drawdown restricting short sales to passive limit prices strictly above the national best bid; modeled nonlinear order book sweep VWAP and depth depletion slippage; authored comprehensive 6-test unit suite (`tests/trading_frictions_luld.test.js`); hardened integration test lifecycles; and verified 100% reliability across 95-execution multi-round stress runner and 33-suite platform regression.

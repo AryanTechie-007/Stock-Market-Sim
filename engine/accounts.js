@@ -61,12 +61,16 @@ export const ACHIEVEMENTS_CONFIG = {
  * realized/unrealized P&L, achievements, and leaderboard ranking.
  */
 export class AccountManager {
-  constructor(initialCredits = 100000, storageManager = null) {
+  constructor(initialCredits = 100000, storageManager = null, options = {}) {
     this.initialCredits = initialCredits;
     this.storageManager = storageManager;
+    const opts = (storageManager && typeof storageManager === 'object' && !storageManager.loadState && !storageManager.loadAllAccounts && !storageManager.saveAccount)
+      ? storageManager
+      : (options || {});
+    this.enableFees = opts.enableFees !== undefined ? opts.enableFees : true;
     this.accounts = new Map(); // userId -> account object
 
-    if (this.storageManager) {
+    if (this.storageManager && typeof this.storageManager.loadState === 'function') {
       this._loadFromStorage();
     }
   }
@@ -274,7 +278,84 @@ export class AccountManager {
   }
 
   /**
-   * Settle an executed trade between buyer and seller with full margin and short accounting
+   * Calculates regulatory and exchange trading fees.
+   * Taker fee: 3 bps (0.03%) + $0.005/share (min $0.50).
+   * Maker fee: 1 bp (0.01%) fee.
+   * @param {Object} params
+   * @returns {number}
+   */
+  calculateTransactionFee({ notional, quantity, isTaker }) {
+    if (this.enableFees === false) return 0;
+    const cleanNotional = Math.max(0, Number(notional) || 0);
+    const cleanQty = Math.max(0, Number(quantity) || 0);
+    if (isTaker) {
+      const bpsFee = cleanNotional * 0.0003;
+      const perShareFee = cleanQty * 0.005;
+      return +(Math.max(0.50, bpsFee + perShareFee)).toFixed(2);
+    } else {
+      return +(cleanNotional * 0.0001).toFixed(2);
+    }
+  }
+
+  /**
+   * Returns annual borrow interest rate for short stock loans.
+   * Easy-To-Borrow (ETB): 1.0% annual rate.
+   * Hard-To-Borrow (HTB): 12.0% annual rate.
+   * @param {string} symbol
+   * @returns {number}
+   */
+  getBorrowRate(symbol) {
+    const HTB_SYMBOLS = new Set(['SOLR', 'STRM', 'BYTE']);
+    return HTB_SYMBOLS.has(symbol) ? 0.12 : 0.01;
+  }
+
+  /**
+   * Accrues borrow financing fee on a short stock position.
+   * @param {string} userId
+   * @param {string} symbol
+   * @param {number} currentPrice
+   * @param {number} days
+   * @returns {number} fee charged
+   */
+  accrueShortBorrowFee(userId, symbol, currentPrice, days = 1) {
+    const user = this.accounts.get(userId);
+    if (!user) return 0;
+    const holding = user.holdings.get(symbol);
+    if (!holding || !holding.shortQuantity || holding.shortQuantity <= 0) return 0;
+
+    const rate = this.getBorrowRate(symbol);
+    const notional = holding.shortQuantity * (currentPrice || holding.shortAvgPrice || 100);
+    const fee = +(notional * rate * (days / 365)).toFixed(2);
+
+    if (fee > 0) {
+      user.credits = +(user.credits - fee).toFixed(2);
+      user.totalBorrowFeesPaid = +((user.totalBorrowFeesPaid || 0) + fee).toFixed(2);
+      if (!user.isNpc) this._saveAccount(user);
+    }
+    return fee;
+  }
+
+  /**
+   * Evaluates and accrues daily short borrow fees across all active short accounts
+   * @param {Object} currentPrices - symbol -> price
+   * @param {number} days
+   * @returns {number} total fees accrued
+   */
+  accrueDailyBorrowFinancing(currentPrices = {}, days = 1) {
+    let totalAccrued = 0;
+    for (const user of this.accounts.values()) {
+      for (const [sym, holding] of user.holdings.entries()) {
+        if (holding.shortQuantity > 0) {
+          const price = currentPrices[sym] || holding.shortAvgPrice || 100;
+          totalAccrued += this.accrueShortBorrowFee(user.id, sym, price, days);
+        }
+      }
+    }
+    return +totalAccrued.toFixed(2);
+  }
+
+  /**
+   * Settle an executed trade between buyer and seller with full margin, fee, and short accounting
    * @param {Object} trade
    * @param {boolean} buyerWasMaker - whether buyer had a resting limit order
    * @param {boolean} sellerWasMaker - whether seller had a resting limit order
@@ -283,6 +364,16 @@ export class AccountManager {
     const buyer = this.getOrCreateUser(trade.buyerId, trade.buyerName);
     const seller = this.getOrCreateUser(trade.sellerId, trade.sellerName);
     const totalValue = +(trade.price * trade.quantity).toFixed(2);
+
+    // Calculate transaction fees
+    const buyerFee = this.calculateTransactionFee({ notional: totalValue, quantity: trade.quantity, isTaker: !buyerWasMaker });
+    const sellerFee = this.calculateTransactionFee({ notional: totalValue, quantity: trade.quantity, isTaker: !sellerWasMaker });
+
+    buyer.credits = +(buyer.credits - buyerFee).toFixed(2);
+    buyer.totalFeesPaid = +((buyer.totalFeesPaid || 0) + buyerFee).toFixed(2);
+
+    seller.credits = +(seller.credits - sellerFee).toFixed(2);
+    seller.totalFeesPaid = +((seller.totalFeesPaid || 0) + sellerFee).toFixed(2);
 
     // --- Settle Buyer ---
     let buyerHolding = buyer.holdings.get(trade.symbol);
@@ -354,6 +445,7 @@ export class AccountManager {
       price: trade.price,
       quantity: trade.quantity,
       totalValue,
+      fee: buyerFee,
       role: buyerWasMaker ? 'MAKER' : 'TAKER',
       realizedPnL: buyerSide === 'BUY_TO_COVER' ? buyerRealizedPnL : undefined,
       counterparty: trade.sellerName,
@@ -440,6 +532,7 @@ export class AccountManager {
       price: trade.price,
       quantity: trade.quantity,
       totalValue,
+      fee: sellerFee,
       role: sellerWasMaker ? 'MAKER' : 'TAKER',
       realizedPnL: sellerSide === 'SELL' ? sellerRealizedPnL : undefined,
       counterparty: trade.buyerName,

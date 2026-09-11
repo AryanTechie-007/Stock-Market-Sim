@@ -9,6 +9,72 @@ export class OrderBook {
     this.orders = new Map(); // orderId -> order
     this.stopOrders = new Map(); // orderId -> resting stop order
     this.closingOrders = new Map(); // orderId -> MOC or LOC order
+
+    // Limit-Up / Limit-Down (LULD) Circuit Breakers & Reg SHO State
+    this.status = 'ACTIVE'; // 'ACTIVE' | 'HALTED'
+    this.haltReason = null;
+    this.haltExpiresAt = 0;
+    this.referencePrice = null; // 5-minute rolling reference price
+    this.luldBandPercent = 0.08; // +/- 8% bands
+    this.regShoTriggered = false; // SEC Rule 201 alternative uptick rule
+  }
+
+  setReferencePrice(price) {
+    if (typeof price === 'number' && price > 0) {
+      this.referencePrice = +price.toFixed(2);
+    }
+  }
+
+  getLULDBands() {
+    const ref = this.referencePrice || (this.bids[0]?.price && this.asks[0]?.price ? (this.bids[0].price + this.asks[0].price) / 2 : 100);
+    const band = ref * this.luldBandPercent;
+    return {
+      referencePrice: +ref.toFixed(2),
+      upperBand: +(ref + band).toFixed(2),
+      lowerBand: +(Math.max(0.01, ref - band)).toFixed(2),
+      bandPercent: this.luldBandPercent,
+      isHalted: this.isHalted(),
+      status: this.status,
+      haltExpiresAt: this.haltExpiresAt,
+      regShoTriggered: this.regShoTriggered
+    };
+  }
+
+  isHalted() {
+    if (this.status !== 'HALTED') return false;
+    if (Date.now() >= this.haltExpiresAt) {
+      return false; // ready for resumption uncrossing
+    }
+    return true;
+  }
+
+  triggerHalt(reason = 'LULD_BREACH', durationSec = 30) {
+    this.status = 'HALTED';
+    this.haltReason = reason;
+    this.haltExpiresAt = Date.now() + durationSec * 1000;
+    return {
+      symbol: this.symbol,
+      status: 'HALTED',
+      reason,
+      haltExpiresAt: this.haltExpiresAt,
+      durationSec
+    };
+  }
+
+  resumeTrading() {
+    this.status = 'ACTIVE';
+    this.haltReason = null;
+    this.haltExpiresAt = 0;
+  }
+
+  checkRegSHO(previousClose, currentPrice) {
+    if (typeof previousClose === 'number' && previousClose > 0 && typeof currentPrice === 'number') {
+      const dropPct = (currentPrice - previousClose) / previousClose;
+      if (dropPct <= -0.10) {
+        this.regShoTriggered = true;
+      }
+    }
+    return this.regShoTriggered;
   }
 
   /**
@@ -36,6 +102,51 @@ export class OrderBook {
 
     if (order.quantity <= 0) {
       return { trades, remainingOrder: null };
+    }
+
+    // Check if symbol is halted under LULD circuit breaker
+    if (this.isHalted()) {
+      if (order.type === 'LIMIT') {
+        if (order.side === 'BUY') {
+          this._insertBid(order);
+        } else {
+          this._insertAsk(order);
+        }
+        order.status = 'OPEN';
+        this.orders.set(order.id, order);
+        return { trades: [], remainingOrder: order, isHalted: true };
+      } else {
+        return { trades: [], remainingOrder: null, error: 'Trading halted due to LULD circuit breaker' };
+      }
+    }
+
+    // Reg SHO Rule 201 alternative uptick rule restriction
+    if (order.isShort && this.regShoTriggered) {
+      const bestBid = this.getBestBid();
+      if (order.type === 'MARKET' || (bestBid !== null && order.price <= bestBid)) {
+        return {
+          trades: [],
+          remainingOrder: null,
+          error: `Reg SHO Rule 201 active for ${this.symbol}: Short sales restricted to passive prices above best bid (${bestBid})`
+        };
+      }
+    }
+
+    // Limit-Up / Limit-Down Price Band Breach Check
+    if (order.type === 'LIMIT' && this.referencePrice) {
+      const bands = this.getLULDBands();
+      if (order.price > bands.upperBand || order.price < bands.lowerBand) {
+        const reason = order.price > bands.upperBand ? 'LULD_LIMIT_UP' : 'LULD_LIMIT_DOWN';
+        this.triggerHalt(reason, 30);
+        if (order.side === 'BUY') {
+          this._insertBid(order);
+        } else {
+          this._insertAsk(order);
+        }
+        order.status = 'OPEN';
+        this.orders.set(order.id, order);
+        return { trades: [], remainingOrder: order, isHalted: true, haltTriggered: true, reason };
+      }
     }
 
     if (order.side === 'BUY') {

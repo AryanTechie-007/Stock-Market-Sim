@@ -17,6 +17,8 @@ export class MarketMaker extends BaseTrader {
     this.spreadTarget = options.spreadTarget || 0.008; // 0.8% spread
     this.volatilitySpreads = new Map(); // symbol -> multiplier
     this.regimeMultiplier = 1.0;
+    this.disableNoise = options.disableNoise || false;
+    this.fundamentalDispersion = new Map(); // symbol -> persistent estimation bias
   }
 
   setRegimeMultiplier(multiplier) {
@@ -64,8 +66,12 @@ export class MarketMaker extends BaseTrader {
       microprice = (bestAsk * bidQty + bestBid * askQty) / (bidQty + askQty);
     }
 
-    // Noisy fundamental estimation: MMs have imperfect consensus rather than oracle access
-    const noise = (Math.random() - 0.5) * 0.008; // +/- 0.4% estimation dispersion
+    // Noisy fundamental estimation: persistent per MM instance and symbol rather than jittering on every call
+    if (!this.fundamentalDispersion.has(symbol)) {
+      const initialNoise = this.disableNoise ? 0 : (Math.random() - 0.5) * 0.003;
+      this.fundamentalDispersion.set(symbol, initialNoise);
+    }
+    const noise = this.disableNoise ? 0 : (this.fundamentalDispersion.get(symbol) || 0);
     const noisyFundamental = (typeof target.intrinsicValue === 'number' && target.intrinsicValue > 0)
       ? target.intrinsicValue * (1 + noise)
       : target.price;

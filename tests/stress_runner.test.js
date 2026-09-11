@@ -64,7 +64,8 @@ const suites = [
   { name: 'v0.912 Options Chains & Black-Scholes Derivatives', cmd: 'node tests/options_derivatives.test.js' },
   { name: 'v0.913 Dark Pool & ATS Midpoint Cross', cmd: 'node tests/darkpool_ats.test.js' },
   { name: 'v0.914 Pluggable Database & PostgreSQL Adapter', cmd: 'node tests/database_adapter.test.js' },
-  { name: 'v0.915 Endogenous Price Discovery & GARCH(1,1)', cmd: 'node tests/endogenous_price_garch.test.js' }
+  { name: 'v0.915 Endogenous Price Discovery & GARCH(1,1)', cmd: 'node tests/endogenous_price_garch.test.js' },
+  { name: 'v0.916 Trading Frictions & LULD Circuit Breakers', cmd: 'node tests/trading_frictions_luld.test.js' }
 ];
 
 const ROUNDS = parseInt(process.env.STRESS_ROUNDS || '5', 10);
